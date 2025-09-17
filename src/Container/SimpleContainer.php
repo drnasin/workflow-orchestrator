@@ -2,6 +2,8 @@
 
 namespace WorkflowOrchestrator\Container;
 
+use ReflectionClass;
+use ReflectionException;
 use WorkflowOrchestrator\Contracts\ContainerInterface;
 use WorkflowOrchestrator\Exceptions\ContainerException;
 
@@ -41,11 +43,11 @@ class SimpleContainer implements ContainerInterface
     }
 
     /**
-     * @throws \ReflectionException
+     * @throws ReflectionException
      */
     private function canAutoResolve(string $className): bool
     {
-        $reflection = new \ReflectionClass($className);
+        $reflection = new ReflectionClass($className);
         $constructor = $reflection->getConstructor();
 
         if (!$constructor) {
@@ -61,11 +63,11 @@ class SimpleContainer implements ContainerInterface
         return true;
     }
 
-    // src/Container/SimpleContainer.php
-
+    /**
+     * @throws ReflectionException
+     */
     public function has(string $id): bool
     {
         return isset($this->instances[$id]) || isset($this->factories[$id]) || (class_exists($id) && $this->canAutoResolve($id));
     }
-
 }
