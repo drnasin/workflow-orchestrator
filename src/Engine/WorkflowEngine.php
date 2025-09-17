@@ -136,6 +136,9 @@ readonly class WorkflowEngine
         return $pipeline($message);
     }
 
+    /**
+     * @throws WorkflowException
+     */
     private function executeStep(string $stepName, WorkflowMessage $message): WorkflowMessage
     {
         $handlerConfig = $this->registry->getHandler($stepName);
@@ -174,7 +177,7 @@ readonly class WorkflowEngine
                 $this->processWorkflow($message);
             }
         } catch (\Throwable $e) {
-            // Handle error - you could implement retry logic here
+            // Handle error - we could implement retry logic here
             throw new WorkflowException("Async step '$stepName' failed: " . $e->getMessage(), 0, $e);
         }
     }
