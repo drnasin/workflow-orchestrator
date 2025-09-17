@@ -4,6 +4,7 @@ namespace WorkflowOrchestrator\Engine;
 
 use ReflectionMethod;
 use ReflectionParameter;
+use Throwable;
 use WorkflowOrchestrator\Attributes\Header;
 use WorkflowOrchestrator\Contracts\ContainerInterface;
 use WorkflowOrchestrator\Contracts\QueueInterface;
@@ -152,7 +153,7 @@ readonly class WorkflowEngine
             }
 
             return $message->withPayload($result);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             // Handle errors - wrap in WorkflowException with step context
             throw new WorkflowException("Step '$stepName' failed: " . $e->getMessage(), 0, $e);
         }
@@ -176,7 +177,7 @@ readonly class WorkflowEngine
             if ($message->hasMoreSteps()) {
                 $this->processWorkflow($message);
             }
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             // Handle error - we could implement retry logic here
             throw new WorkflowException("Async step '$stepName' failed: " . $e->getMessage(), 0, $e);
         }
