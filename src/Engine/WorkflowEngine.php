@@ -155,7 +155,7 @@ readonly class WorkflowEngine
             return $message->withPayload($result);
         } catch (Throwable $e) {
             // Handle errors - wrap in WorkflowException with step context
-            throw new WorkflowException("Step '$stepName' failed: " . $e->getMessage(), 0, $e);
+            throw new WorkflowException("Step '$stepName' failed: " . $e->getMessage(), 0, $e, $stepName);
         }
     }
 
@@ -179,7 +179,7 @@ readonly class WorkflowEngine
             }
         } catch (Throwable $e) {
             // Handle error - we could implement retry logic here
-            throw new WorkflowException("Async step '$stepName' failed: " . $e->getMessage(), 0, $e);
+            throw new WorkflowException("Async step '$stepName' failed: " . $e->getMessage(), 0, $e, $stepName);
         }
     }
 }
