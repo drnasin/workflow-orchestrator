@@ -253,7 +253,57 @@ class WorkflowEngineTest extends TestCase
         $this->expectException(WorkflowException::class);
         $this->expectExceptionMessage("Step 'failing-step' failed: Step failed");
 
-        $this->engine->execute('failing-workflow', new TestOrder('ORD-131'));
+        try {
+            $this->engine->execute('failing-workflow', new TestOrder('ORD-131'));
+        } catch (WorkflowException $e) {
+            $this->assertSame('failing-step', $e->getFailedStep());
+            throw $e;
+        }
+    }
+
+    public function test_exception_contains_failed_step_for_sync_processing(): void
+    {
+        $this->engine->register(FailingWorkflow::class);
+
+        try {
+            $this->engine->execute('failing-workflow', new TestOrder('ORD-132'));
+            $this->fail('Expected WorkflowException to be thrown');
+        } catch (WorkflowException $e) {
+            $this->assertSame('failing-step', $e->getFailedStep());
+            $this->assertStringContainsString("Step 'failing-step' failed", $e->getMessage());
+        }
+    }
+
+    public function test_exception_contains_failed_step_for_async_processing(): void
+    {
+        $failingAsyncWorkflow = new class {
+            #[Orchestrator(channel: 'failing-async-workflow')]
+            public function failingAsyncWorkflow(TestOrder $order): array
+            {
+                return ['failing-async-step'];
+            }
+
+            #[Handler(channel: 'failing-async-step', async: true)]
+            public function failingAsyncStep(TestOrder $order): TestOrder
+            {
+                throw new \Exception('Async step failed');
+            }
+        };
+
+        $this->container->set(get_class($failingAsyncWorkflow), $failingAsyncWorkflow);
+        $this->engine->register($failingAsyncWorkflow);
+
+        // Execute async workflow (gets queued)
+        $this->engine->execute('failing-async-workflow', new TestOrder('ORD-133'));
+
+        try {
+            // Process the queued step which should fail
+            $this->engine->processAsyncStep('failing-async-step');
+            $this->fail('Expected WorkflowException to be thrown');
+        } catch (WorkflowException $e) {
+            $this->assertSame('failing-async-step', $e->getFailedStep());
+            $this->assertStringContainsString("Async step 'failing-async-step' failed", $e->getMessage());
+        }
     }
 
     public function test_supports_method_chaining_registration(): void
