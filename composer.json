@@ -20,6 +20,9 @@
     "psr/container": "^2.0",
     "ext-pdo": "*"
   },
+  "suggest": {
+    "ext-redis": "Required for RedisQueue functionality"
+  },
   "require-dev": {
     "phpunit/phpunit": "^10.0"
   },
