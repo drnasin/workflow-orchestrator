@@ -3,6 +3,7 @@
 namespace WorkflowOrchestrator\Engine;
 
 use ReflectionMethod;
+use ReflectionNamedType;
 use ReflectionParameter;
 use Throwable;
 use WorkflowOrchestrator\Attributes\Header;
@@ -83,7 +84,7 @@ readonly class WorkflowEngine
 
         // Try to resolve from container
         $type = $param->getType();
-        if ($type && $type instanceof \ReflectionNamedType && !$type->isBuiltin()) {
+        if ($type instanceof ReflectionNamedType && !$type->isBuiltin()) {
             $typeName = $type->getName();
 
             // Check if payload matches the type
