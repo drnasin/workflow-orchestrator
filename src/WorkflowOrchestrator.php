@@ -18,7 +18,7 @@ class WorkflowOrchestrator
     public function __construct(
         private ?ContainerInterface $container = null, 
         private readonly ?QueueInterface $queue = null,
-        private array $middleware = []
+        private readonly array $middleware = []
     ) {
         $this->container ??= new SimpleContainer();
         $this->engine = new WorkflowEngine($this->container, queue: $this->queue, middleware: $this->middleware);
