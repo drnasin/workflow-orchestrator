@@ -3,6 +3,7 @@
 namespace WorkflowOrchestrator\Registry;
 
 use ReflectionClass;
+use ReflectionException;
 use ReflectionMethod;
 use WorkflowOrchestrator\Attributes\Handler;
 use WorkflowOrchestrator\Attributes\Orchestrator;
@@ -14,7 +15,7 @@ class HandlerRegistry
     private array $handlers = [];
 
     /**
-     * @throws \ReflectionException
+     * @throws ReflectionException
      */
     public function registerClass(string|object $class): void
     {
@@ -56,11 +57,17 @@ class HandlerRegistry
         }
     }
 
+    /**
+     * @throws WorkflowException
+     */
     public function getOrchestrator(string $channel): array
     {
         return $this->orchestrators[$channel] ?? throw new WorkflowException("No orchestrator found for channel: $channel");
     }
 
+    /**
+     * @throws WorkflowException
+     */
     public function getHandler(string $channel): array
     {
         return $this->handlers[$channel] ?? throw new WorkflowException("No handler found for channel: $channel");
