@@ -21,6 +21,10 @@ class SimpleContainer implements ContainerInterface
         }
     }
 
+    /**
+     * @throws ReflectionException
+     * @throws ContainerException
+     */
     public function get(string $id): object
     {
         if (isset($this->instances[$id])) {
