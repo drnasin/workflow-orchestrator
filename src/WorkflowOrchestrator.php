@@ -16,10 +16,12 @@ class WorkflowOrchestrator
     private WorkflowEngine $engine;
 
     public function __construct(
-        ?ContainerInterface $container = null, ?QueueInterface $queue = null, array $middleware = []
+        private ?ContainerInterface $container = null, 
+        private readonly ?QueueInterface $queue = null,
+        private array $middleware = []
     ) {
-        $container ??= new SimpleContainer();
-        $this->engine = new WorkflowEngine($container, queue: $queue, middleware: $middleware);
+        $this->container ??= new SimpleContainer();
+        $this->engine = new WorkflowEngine($this->container, queue: $this->queue, middleware: $this->middleware);
     }
 
     /**
@@ -51,6 +53,11 @@ class WorkflowOrchestrator
     public function processAsyncStep(string $stepName): void
     {
         $this->engine->processAsyncStep($stepName);
+    }
+
+    public function withQueue(QueueInterface $queue): self
+    {
+        return new self($this->container, $queue, $this->middleware);
     }
 
     public function getEngine(): WorkflowEngine
