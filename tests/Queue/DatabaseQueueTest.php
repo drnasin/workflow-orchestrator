@@ -5,19 +5,19 @@ namespace WorkflowOrchestrator\Tests\Queue;
 use PDO;
 use PHPUnit\Framework\TestCase;
 use WorkflowOrchestrator\Message\WorkflowMessage;
-use WorkflowOrchestrator\Queue\DatabaseQueue;
+use WorkflowOrchestrator\Queue\SqliteQueue;
 
 class DatabaseQueueTest extends TestCase
 {
     private PDO $pdo;
-    private DatabaseQueue $queue;
+    private SqliteQueue $queue;
 
     protected function setUp(): void
     {
         $this->pdo = new PDO('sqlite::memory:');
         $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         
-        $this->queue = new DatabaseQueue($this->pdo);
+        $this->queue = new SqliteQueue($this->pdo);
     }
 
     public function test_can_push_and_pop_message(): void
@@ -107,7 +107,7 @@ class DatabaseQueueTest extends TestCase
 
     public function test_can_use_custom_table_name(): void
     {
-        $customQueue = new DatabaseQueue($this->pdo, 'custom_queue_table');
+        $customQueue = new SqliteQueue($this->pdo, 'custom_queue_table');
         
         $customQueue->push('test', new WorkflowMessage('payload', [], []));
         
