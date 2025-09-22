@@ -189,6 +189,173 @@ $orchestrator = new WorkflowOrchestrator(
 );
 ```
 
+## Queue Implementations
+
+The Workflow Orchestrator supports multiple queue implementations for async step processing. Choose the one that best fits your infrastructure needs.
+
+### In-Memory Queue (Default)
+
+The default queue implementation stores messages in memory and is suitable for development and testing:
+
+```php
+use WorkflowOrchestrator\Queue\InMemoryQueue;
+
+$orchestrator = WorkflowOrchestrator::create()
+    ->withQueue(new InMemoryQueue())
+    ->register(OrderProcessor::class);
+```
+
+**Note:** In-memory queues lose data when the process ends and don't support distributed processing.
+
+### SQLite Queue
+
+For persistent storage without external dependencies, use the SQLite queue:
+
+```php
+use WorkflowOrchestrator\Queue\SqliteQueue;
+
+// Create PDO connection
+$pdo = new PDO('sqlite:/path/to/your/database.sqlite');
+$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+// Create SQLite queue
+$queue = new SqliteQueue($pdo);
+
+$orchestrator = WorkflowOrchestrator::create()
+    ->withQueue($queue)
+    ->register(OrderProcessor::class);
+```
+
+**Features:**
+- ✅ Persistent storage
+- ✅ ACID transactions
+- ✅ Automatic table creation
+- ✅ No external dependencies
+- ✅ Single-file database
+
+**Setup Requirements:**
+- PHP PDO extension (included by default)
+- Write permissions for SQLite database file
+
+**Custom Table Name:**
+```php
+$queue = new SqliteQueue($pdo, 'my_custom_queue_table');
+```
+
+### Redis Queue
+
+For high-performance, distributed queue processing:
+
+```php
+use WorkflowOrchestrator\Queue\RedisQueue;
+
+// Create Redis connection
+$redis = new Redis();
+$redis->connect('127.0.0.1', 6379);
+// Optional: $redis->auth('your-password');
+// Optional: $redis->select(1); // Use specific database
+
+// Create Redis queue
+$queue = new RedisQueue($redis);
+
+$orchestrator = WorkflowOrchestrator::create()
+    ->withQueue($queue)
+    ->register(OrderProcessor::class);
+```
+
+**Features:**
+- ✅ High performance
+- ✅ Distributed processing
+- ✅ Blocking operations
+- ✅ Multiple queue support
+- ✅ Automatic cleanup
+- ✅ Queue introspection
+
+**Setup Requirements:**
+- Redis server
+- PHP Redis extension: `composer require ext-redis` or install via system package manager
+
+**Install Redis Extension:**
+```bash
+# Ubuntu/Debian
+sudo apt-get install php-redis
+
+# macOS (via Homebrew)
+brew install php
+pecl install redis
+
+# Windows (via PECL)
+pecl install redis
+```
+
+**Custom Key Prefix:**
+```php
+$queue = new RedisQueue($redis, 'my_app:queue:');
+```
+
+**Advanced Redis Usage:**
+```php
+// Blocking pop with timeout
+$message = $queue->blockingPop('high-priority', 30); // 30 second timeout
+
+// Check queue size
+$size = $queue->size('email-notifications');
+
+// Get all queue names
+$queues = $queue->getQueueNames();
+
+// Peek at next message without removing it
+$nextMessage = $queue->peek('data-processing');
+```
+
+### Queue Selection Guide
+
+| Feature | InMemory | SQLite | Redis |
+|---------|----------|--------|-------|
+| Persistence | ❌ | ✅ | ✅ |
+| Distributed | ❌ | ❌ | ✅ |
+| Performance | ⚡⚡⚡ | ⚡⚡ | ⚡⚡⚡ |
+| Setup Complexity | ⚡⚡⚡ | ⚡⚡ | ⚡ |
+| External Dependencies | ❌ | ❌ | ✅ |
+| Blocking Operations | ❌ | ❌ | ✅ |
+
+**Recommendations:**
+- **Development/Testing:** InMemoryQueue
+- **Single-server production:** SqliteQueue
+- **Multi-server/high-volume:** RedisQueue
+
+### Custom Queue Implementation
+
+Implement your own queue by creating a class that implements `QueueInterface`:
+
+```php
+use WorkflowOrchestrator\Contracts\QueueInterface;
+use WorkflowOrchestrator\Message\WorkflowMessage;
+
+class MyCustomQueue implements QueueInterface
+{
+    public function push(string $queue, WorkflowMessage $message): void
+    {
+        // Your implementation
+    }
+
+    public function pop(string $queue): ?WorkflowMessage
+    {
+        // Your implementation
+    }
+
+    public function size(string $queue): int
+    {
+        // Your implementation
+    }
+
+    public function clear(string $queue): void
+    {
+        // Your implementation
+    }
+}
+```
+
 ## Error Handling
 
 Workflow steps that fail are automatically wrapped with context:
