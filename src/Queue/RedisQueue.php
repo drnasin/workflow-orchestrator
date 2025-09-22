@@ -28,7 +28,7 @@ class RedisQueue implements QueueInterface
         $key = $this->getQueueKey($queue);
         $serializedMessage = $this->redis->lPop($key);
         
-        if ($serializedMessage === false || $serializedMessage === null) {
+        if (!$serializedMessage) {
             return null;
         }
         
