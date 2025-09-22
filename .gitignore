@@ -6,3 +6,4 @@ vendor
 coverage
 .phpunit.cache
 CLAUDE.md
+.phpunit.result.cache
