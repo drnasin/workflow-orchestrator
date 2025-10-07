@@ -101,10 +101,12 @@ jobs:
         shell: pwsh
         run: |
           choco install redis-64 -y
-          $redisPath = "C:\ProgramData\chocolatey\lib\redis-64\tools"
-          Start-Process -FilePath "$redisPath\redis-server.exe" -ArgumentList "--service-install" -Wait -NoNewWindow
-          Start-Process -FilePath "$redisPath\redis-server.exe" -ArgumentList "--service-start" -Wait -NoNewWindow
+          Get-ChildItem "C:\ProgramData\chocolatey\lib\redis-64" -Recurse -Filter "redis-server.exe" | Select-Object -First 1 | ForEach-Object {
+            Write-Host "Found redis-server.exe at: $($_.FullName)"
+            Start-Process -FilePath $_.FullName -ArgumentList "--maxheap 128M" -WindowStyle Hidden
+          }
           Start-Sleep -Seconds 3
+          Write-Host "Redis server started"
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
