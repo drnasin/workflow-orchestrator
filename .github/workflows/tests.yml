@@ -42,9 +42,9 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: pdo, pdo_sqlite, redis
+          extensions: pdo, pdo_sqlite, redis, xdebug
           coverage: xdebug
-          ini-values: error_reporting=E_ALL, xdebug.mode=coverage
+          ini-values: error_reporting=E_ALL
 
       - name: Validate composer.json and composer.lock
         run: composer validate --strict
@@ -104,8 +104,8 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
-          extensions: pdo, pdo_sqlite, redis
-          coverage: none
+          extensions: pdo, pdo_sqlite, redis, xdebug
+          coverage: xdebug
 
       - name: Install lowest dependencies
         run: composer update --prefer-lowest --prefer-stable --prefer-dist --no-interaction --no-progress
