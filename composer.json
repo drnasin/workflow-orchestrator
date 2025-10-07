@@ -24,7 +24,7 @@
     "ext-redis": "Required for RedisQueue functionality"
   },
   "require-dev": {
-    "phpunit/phpunit": "^10.0"
+    "phpunit/phpunit": "^12"
   },
   "autoload": {
     "psr-4": {
