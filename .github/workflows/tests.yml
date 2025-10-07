@@ -176,7 +176,7 @@ jobs:
         run: composer install --prefer-dist --no-progress --no-interaction
 
       - name: Run test suite (Redis tests will be skipped)
-        run: composer test
+        run: vendor/bin/phpunit --no-coverage
 
   test-lowest-dependencies:
     runs-on: ubuntu-latest
