@@ -82,7 +82,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
-        php: ['8.3']
+        php: ['8.3', '8.4']
 
     name: PHP ${{ matrix.php }} - ${{ matrix.os }}
 
@@ -98,10 +98,13 @@ jobs:
 
       - name: Setup Redis (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
           choco install redis-64 -y
-          redis-server --service-install
-          redis-server --service-start
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          & 'C:\Program Files\Redis\redis-server.exe' --service-install
+          & 'C:\Program Files\Redis\redis-server.exe' --service-start
+          Start-Sleep -Seconds 2
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
