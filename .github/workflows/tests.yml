@@ -44,7 +44,7 @@ jobs:
           php-version: ${{ matrix.php }}
           extensions: pdo, pdo_sqlite, redis
           coverage: xdebug
-          ini-values: error_reporting=E_ALL
+          ini-values: error_reporting=E_ALL, xdebug.mode=coverage
 
       - name: Validate composer.json and composer.lock
         run: composer validate --strict
