@@ -90,24 +90,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Redis (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install redis
-          redis-server --daemonize yes
-
-      - name: Setup Redis (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          choco install redis-64 -y
-          Get-ChildItem "C:\ProgramData\chocolatey\lib\redis-64" -Recurse -Filter "redis-server.exe" | Select-Object -First 1 | ForEach-Object {
-            Write-Host "Found redis-server.exe at: $($_.FullName)"
-            Start-Process -FilePath $_.FullName -ArgumentList "--maxheap 128M" -WindowStyle Hidden
-          }
-          Start-Sleep -Seconds 3
-          Write-Host "Redis server started"
-
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
