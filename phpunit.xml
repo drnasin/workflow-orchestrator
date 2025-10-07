@@ -17,7 +17,7 @@
     </source>
     <coverage>
         <report>
-            <html outputDirectory="coverage"/>
+            <html outputDirectory="tests/coverage"/>
             <text outputFile="php://stdout"/>
         </report>
     </coverage>
