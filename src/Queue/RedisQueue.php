@@ -8,11 +8,8 @@ use WorkflowOrchestrator\Message\WorkflowMessage;
 
 class RedisQueue implements QueueInterface
 {
-    private string $keyPrefix;
-
-    public function __construct(private Redis $redis, string $keyPrefix = 'workflow_queue:')
+    public function __construct(private readonly Redis $redis, private string $keyPrefix = 'workflow_queue:')
     {
-        $this->keyPrefix = $keyPrefix;
     }
 
     public function push(string $queue, WorkflowMessage $message): void
