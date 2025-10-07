@@ -90,6 +90,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Start Redis Server
+        uses: shogo82148/actions-setup-redis@v1
+        with:
+          redis-version: '7.x'
+          auto-start: true
+
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
