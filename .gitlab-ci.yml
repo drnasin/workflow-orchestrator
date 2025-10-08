@@ -64,7 +64,7 @@ test:php8.3:linux:
     REDIS_PORT: "6379"
     XDEBUG_MODE: coverage
   before_script:
-    - apt-get update && apt-get install -y git unzip libzip-dev
+    - apt-get update && apt-get install -y git unzip libzip-dev socat
     - docker-php-ext-install zip
     - pecl install redis xdebug
     - docker-php-ext-enable redis xdebug
@@ -72,6 +72,7 @@ test:php8.3:linux:
     - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
     - composer validate --strict
     - composer install --prefer-dist --no-progress --no-interaction
+    - socat TCP-LISTEN:6379,fork,reuseaddr TCP:redis:6379 &
   cache:
     key: "$CI_COMMIT_REF_SLUG-php-8.3"
     paths:
@@ -82,7 +83,7 @@ test:php8.3:linux:
       if (extension_loaded('redis')) {
         try {
           \$redis = new Redis();
-          \$redis->connect('redis', 6379);
+          \$redis->connect('127.0.0.1', 6379);
           echo 'Redis connection OK' . PHP_EOL;
           \$redis->close();
         } catch (Exception \$e) {
@@ -105,7 +106,7 @@ test:php8.4:linux:
     REDIS_PORT: "6379"
     XDEBUG_MODE: coverage
   before_script:
-    - apt-get update && apt-get install -y git unzip libzip-dev
+    - apt-get update && apt-get install -y git unzip libzip-dev socat
     - docker-php-ext-install zip
     - pecl install redis xdebug
     - docker-php-ext-enable redis xdebug
@@ -113,6 +114,7 @@ test:php8.4:linux:
     - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
     - composer validate --strict
     - composer install --prefer-dist --no-progress --no-interaction
+    - socat TCP-LISTEN:6379,fork,reuseaddr TCP:redis:6379 &
   cache:
     key: "$CI_COMMIT_REF_SLUG-php-8.4"
     paths:
@@ -123,7 +125,7 @@ test:php8.4:linux:
       if (extension_loaded('redis')) {
         try {
           \$redis = new Redis();
-          \$redis->connect('redis', 6379);
+          \$redis->connect('127.0.0.1', 6379);
           echo 'Redis connection OK' . PHP_EOL;
           \$redis->close();
         } catch (Exception \$e) {
@@ -181,7 +183,6 @@ test:php8.4:linux:
 
 # Lowest Dependencies Test
 test:lowest-dependencies:
-  <<: *php_template
   stage: test
   image: php:8.3-cli
   services:
@@ -192,11 +193,17 @@ test:lowest-dependencies:
     REDIS_PORT: "6379"
     XDEBUG_MODE: coverage
   before_script:
-    - apt-get update && apt-get install -y git unzip libzip-dev
+    - apt-get update && apt-get install -y git unzip libzip-dev socat
     - docker-php-ext-install zip
     - pecl install redis xdebug
     - docker-php-ext-enable redis xdebug
     - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
     - composer update --prefer-lowest --prefer-stable --prefer-dist --no-interaction --no-progress
+    - socat TCP-LISTEN:6379,fork,reuseaddr TCP:redis:6379 &
+  cache:
+    key: "$CI_COMMIT_REF_SLUG-lowest"
+    paths:
+      - .composer-cache/
+      - vendor/
   script:
     - composer test
