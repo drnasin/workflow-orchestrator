@@ -26,6 +26,7 @@ variables:
   variables:
     REDIS_HOST: redis
     REDIS_PORT: "6379"
+    XDEBUG_MODE: coverage
   before_script:
     - apt-get update && apt-get install -y git unzip libzip-dev
     - docker-php-ext-install zip
@@ -117,6 +118,7 @@ test:lowest-dependencies:
   variables:
     REDIS_HOST: redis
     REDIS_PORT: "6379"
+    XDEBUG_MODE: coverage
   before_script:
     - apt-get update && apt-get install -y git unzip libzip-dev
     - docker-php-ext-install zip
