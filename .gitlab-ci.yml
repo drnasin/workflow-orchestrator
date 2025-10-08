@@ -1,0 +1,126 @@
+stages:
+  - validate
+  - test
+
+variables:
+  COMPOSER_CACHE_DIR: "$CI_PROJECT_DIR/.composer-cache"
+
+.php_template: &php_template
+  before_script:
+    - composer validate --strict
+    - composer install --prefer-dist --no-progress --no-interaction
+  cache:
+    key: "$CI_COMMIT_REF_SLUG-$PHP_VERSION"
+    paths:
+      - .composer-cache/
+      - vendor/
+
+# Linux Tests with Redis
+.test_linux_template: &test_linux
+  <<: *php_template
+  stage: test
+  image: php:${PHP_VERSION}-cli
+  services:
+    - name: redis:7-alpine
+      alias: redis
+  variables:
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+  before_script:
+    - apt-get update && apt-get install -y git unzip libzip-dev
+    - docker-php-ext-install zip
+    - pecl install redis xdebug
+    - docker-php-ext-enable redis xdebug
+    - php -m | grep -i redis
+    - composer validate --strict
+    - composer install --prefer-dist --no-progress --no-interaction
+  script:
+    - php -r "
+      if (extension_loaded('redis')) {
+        try {
+          \$redis = new Redis();
+          \$redis->connect('redis', 6379);
+          echo 'Redis connection OK' . PHP_EOL;
+          \$redis->close();
+        } catch (Exception \$e) {
+          echo 'Redis connection failed' . \$e->getMessage() . PHP_EOL;
+        }
+      } else {
+        echo 'Redis extension not loaded' . PHP_EOL;
+      }
+      "
+    - composer test
+
+test:php8.3:linux:
+  <<: *test_linux
+  variables:
+    PHP_VERSION: "8.3"
+
+test:php8.4:linux:
+  <<: *test_linux
+  variables:
+    PHP_VERSION: "8.4"
+
+# Windows Tests (no Redis)
+.test_windows_template: &test_windows
+  stage: test
+  tags:
+    - windows
+  before_script:
+    - choco install php --version=8.3.0 -y
+    - choco install composer -y
+    - refreshenv
+    - composer validate --strict
+    - composer install --prefer-dist --no-progress --no-interaction
+  script:
+    - vendor/bin/phpunit --no-coverage
+  allow_failure: true
+
+# macOS Tests with Redis
+.test_macos_template: &test_macos
+  stage: test
+  tags:
+    - macos
+  before_script:
+    - brew install php@${PHP_VERSION} redis composer
+    - brew services start redis
+    - pecl install xdebug
+    - composer validate --strict
+    - composer install --prefer-dist --no-progress --no-interaction
+  script:
+    - php -r "
+      if (extension_loaded('redis')) {
+        try {
+          \$redis = new Redis();
+          \$redis->connect('127.0.0.1', 6379);
+          echo 'Redis connection OK' . PHP_EOL;
+          \$redis->close();
+        } catch (Exception \$e) {
+          echo 'Redis connection failed' . \$e->getMessage() . PHP_EOL;
+        }
+      } else {
+        echo 'Redis extension not loaded' . PHP_EOL;
+      }
+      "
+    - composer test
+  allow_failure: true
+
+# Lowest Dependencies Test
+test:lowest-dependencies:
+  <<: *php_template
+  stage: test
+  image: php:8.3-cli
+  services:
+    - name: redis:7-alpine
+      alias: redis
+  variables:
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+  before_script:
+    - apt-get update && apt-get install -y git unzip libzip-dev
+    - docker-php-ext-install zip
+    - pecl install redis xdebug
+    - docker-php-ext-enable redis xdebug
+    - composer update --prefer-lowest --prefer-stable --prefer-dist --no-interaction --no-progress
+  script:
+    - composer test
