@@ -54,14 +54,86 @@ variables:
     - composer test
 
 test:php8.3:linux:
-  <<: *test_linux
+  stage: test
+  image: php:8.3-cli
+  services:
+    - name: redis:7-alpine
+      alias: redis
   variables:
-    PHP_VERSION: "8.3"
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    XDEBUG_MODE: coverage
+  before_script:
+    - apt-get update && apt-get install -y git unzip libzip-dev
+    - docker-php-ext-install zip
+    - pecl install redis xdebug
+    - docker-php-ext-enable redis xdebug
+    - php -m | grep -i redis
+    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    - composer validate --strict
+    - composer install --prefer-dist --no-progress --no-interaction
+  cache:
+    key: "$CI_COMMIT_REF_SLUG-php-8.3"
+    paths:
+      - .composer-cache/
+      - vendor/
+  script:
+    - php -r "
+      if (extension_loaded('redis')) {
+        try {
+          \$redis = new Redis();
+          \$redis->connect('redis', 6379);
+          echo 'Redis connection OK' . PHP_EOL;
+          \$redis->close();
+        } catch (Exception \$e) {
+          echo 'Redis connection failed' . \$e->getMessage() . PHP_EOL;
+        }
+      } else {
+        echo 'Redis extension not loaded' . PHP_EOL;
+      }
+      "
+    - composer test
 
 test:php8.4:linux:
-  <<: *test_linux
+  stage: test
+  image: php:8.4-cli
+  services:
+    - name: redis:7-alpine
+      alias: redis
   variables:
-    PHP_VERSION: "8.4"
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    XDEBUG_MODE: coverage
+  before_script:
+    - apt-get update && apt-get install -y git unzip libzip-dev
+    - docker-php-ext-install zip
+    - pecl install redis xdebug
+    - docker-php-ext-enable redis xdebug
+    - php -m | grep -i redis
+    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    - composer validate --strict
+    - composer install --prefer-dist --no-progress --no-interaction
+  cache:
+    key: "$CI_COMMIT_REF_SLUG-php-8.4"
+    paths:
+      - .composer-cache/
+      - vendor/
+  script:
+    - php -r "
+      if (extension_loaded('redis')) {
+        try {
+          \$redis = new Redis();
+          \$redis->connect('redis', 6379);
+          echo 'Redis connection OK' . PHP_EOL;
+          \$redis->close();
+        } catch (Exception \$e) {
+          echo 'Redis connection failed' . \$e->getMessage() . PHP_EOL;
+        }
+      } else {
+        echo 'Redis extension not loaded' . PHP_EOL;
+      }
+      "
+    - composer test
 
 # Windows Tests (no Redis)
 .test_windows_template: &test_windows
