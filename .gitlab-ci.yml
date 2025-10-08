@@ -32,6 +32,7 @@ variables:
     - pecl install redis xdebug
     - docker-php-ext-enable redis xdebug
     - php -m | grep -i redis
+    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
     - composer validate --strict
     - composer install --prefer-dist --no-progress --no-interaction
   script:
@@ -121,6 +122,7 @@ test:lowest-dependencies:
     - docker-php-ext-install zip
     - pecl install redis xdebug
     - docker-php-ext-enable redis xdebug
+    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
     - composer update --prefer-lowest --prefer-stable --prefer-dist --no-interaction --no-progress
   script:
     - composer test
