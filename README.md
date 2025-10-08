@@ -4,7 +4,7 @@
 
 # Workflow Orchestrator
 
-A lightweight, stateless workflow orchestration library for PHP 8.2+.
+A lightweight, stateless workflow orchestration library for PHP 8.3+.
 
 ## Installation
 
