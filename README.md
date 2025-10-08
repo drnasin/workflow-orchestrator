@@ -1,4 +1,4 @@
-[![Tests](https://github.com/drnasin/mysql-pdo-secure-session-handler/actions/workflows/tests.yml/badge.svg)](https://github.com/drnasin/mysql-pdo-secure-session-handler/actions/workflows/tests.yml)
+[![Tests](https://github.com/drnasin/workflow-orchestrator/actions/workflows/tests.yml/badge.svg)](https://github.com/drnasin/workflow-orchestrator/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PHP Version](https://img.shields.io/badge/PHP-%3E%3D8.3-8892BF.svg)](https://php.net)
 
