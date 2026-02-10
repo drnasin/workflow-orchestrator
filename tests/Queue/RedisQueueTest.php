@@ -18,26 +18,27 @@ class RedisQueueTest extends TestCase
             $this->markTestSkipped('Redis extension is not available');
         }
 
-        $this->redis = new Redis();
-        
         try {
+            $this->redis = new Redis();
             $this->redis->connect('127.0.0.1', 6379);
             $this->redis->select(15); // Use database 15 for tests
-        } catch (\Exception $e) {
+            $this->redis->flushDB();
+        } catch (\Throwable $e) {
             $this->markTestSkipped('Redis server is not available: ' . $e->getMessage());
         }
 
         $this->queue = new RedisQueue($this->redis, 'test_workflow_queue:');
-        
-        // Clean up any existing test data
-        $this->redis->flushDB();
     }
 
     protected function tearDown(): void
     {
-        if (isset($this->redis)) {
-            $this->redis->flushDB();
-            $this->redis->close();
+        try {
+            if (isset($this->redis)) {
+                $this->redis->flushDB();
+                $this->redis->close();
+            }
+        } catch (\Throwable) {
+            // Server unavailable, nothing to clean up
         }
     }
 
@@ -143,7 +144,7 @@ class RedisQueueTest extends TestCase
 
     public function test_handles_complex_payloads(): void
     {
-        $complexPayload = (object) [
+        $complexPayload = [
             'id' => 123,
             'data' => ['nested' => ['array' => true]],
             'items' => [1, 2, 3, 4, 5]

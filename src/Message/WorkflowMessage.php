@@ -73,4 +73,24 @@ class WorkflowMessage
     {
         return $this->headers;
     }
+
+    public function toArray(): array
+    {
+        return [
+            'id' => $this->id,
+            'payload' => $this->payload,
+            'steps' => $this->steps,
+            'headers' => $this->headers,
+        ];
+    }
+
+    public static function fromArray(array $data): self
+    {
+        return new self(
+            $data['payload'],
+            $data['steps'] ?? [],
+            $data['headers'] ?? [],
+            $data['id'] ?? ''
+        );
+    }
 }

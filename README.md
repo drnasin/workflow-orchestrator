@@ -464,8 +464,22 @@ public function sendEmail(Order $order): Order { ... }
 
 ## Requirements
 
-- PHP 8.2+
+- PHP 8.3+
 - PSR-11 container (optional, includes simple container)
+- `ext-pdo` for SqliteQueue
+- `ext-redis` for RedisQueue (optional)
+
+## Changelog
+
+### v1.0.0
+
+**Security Fixes:**
+- Replaced unsafe `serialize()`/`unserialize()` with JSON encoding in `RedisQueue` and `SqliteQueue` to prevent object injection attacks
+- Added table name validation in `SqliteQueue` constructor to prevent SQL injection via malicious table names
+
+**Improvements:**
+- Added `WorkflowMessage::toArray()` and `WorkflowMessage::fromArray()` for safe, portable message serialization
+- Redis tests now gracefully skip (instead of erroring) when Redis server is unavailable
 
 ## License
 

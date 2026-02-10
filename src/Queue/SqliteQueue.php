@@ -3,6 +3,7 @@
 namespace WorkflowOrchestrator\Queue;
 
 use Exception;
+use InvalidArgumentException;
 use PDO;
 use WorkflowOrchestrator\Contracts\QueueInterface;
 use WorkflowOrchestrator\Message\WorkflowMessage;
@@ -11,6 +12,12 @@ class SqliteQueue implements QueueInterface
 {
     public function __construct(private readonly PDO $pdo, private readonly string $tableName = 'workflow_queue')
     {
+        if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $this->tableName)) {
+            throw new InvalidArgumentException(
+                "Invalid table name '{$this->tableName}'. Table name must contain only letters, digits, and underscores, and must start with a letter or underscore."
+            );
+        }
+
         $this->ensureTableExists();
     }
 
@@ -34,13 +41,13 @@ class SqliteQueue implements QueueInterface
     public function push(string $queue, WorkflowMessage $message): void
     {
         $stmt = $this->pdo->prepare("
-            INSERT INTO {$this->tableName} (queue_name, message_data, created_at) 
+            INSERT INTO {$this->tableName} (queue_name, message_data, created_at)
             VALUES (?, ?, ?)
         ");
 
         $stmt->execute([
             $queue,
-            serialize($message),
+            json_encode($message->toArray(), JSON_THROW_ON_ERROR),
             date('Y-m-d H:i:s')
         ]);
     }
@@ -54,10 +61,10 @@ class SqliteQueue implements QueueInterface
 
         try {
             $stmt = $this->pdo->prepare("
-                SELECT id, message_data 
-                FROM {$this->tableName} 
-                WHERE queue_name = ? 
-                ORDER BY created_at ASC, id ASC 
+                SELECT id, message_data
+                FROM {$this->tableName}
+                WHERE queue_name = ?
+                ORDER BY created_at ASC, id ASC
                 LIMIT 1
             ");
             $stmt->execute([$queue]);
@@ -73,7 +80,7 @@ class SqliteQueue implements QueueInterface
 
             $this->pdo->commit();
 
-            return unserialize($row['message_data']);
+            return WorkflowMessage::fromArray(json_decode($row['message_data'], true, 512, JSON_THROW_ON_ERROR));
         } catch (Exception $e) {
             $this->pdo->rollBack();
             throw $e;

@@ -111,7 +111,7 @@ class DatabaseQueueTest extends TestCase
 
     public function test_handles_complex_payloads(): void
     {
-        $complexPayload = (object)[
+        $complexPayload = [
             'id'    => 123,
             'data'  => ['nested' => ['array' => true]],
             'items' => [1, 2, 3, 4, 5]
