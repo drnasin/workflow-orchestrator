@@ -27,11 +27,11 @@ class OrderProcessor
     public function processOrder(Order $order): array
     {
         $steps = ['validate', 'payment'];
-        
+
         if ($order->getCustomer()->isPremium()) {
             $steps[] = 'apply-discount';
         }
-        
+
         $steps[] = 'confirmation';
         return $steps;
     }
@@ -101,7 +101,170 @@ That's it! The workflow will:
 - ✅ **Container integration** - Works with any PSR-11 container
 - ✅ **Zero dependencies** - Only requires PSR interfaces
 
+## Why Workflow Orchestrator?
+
+### Traditional Approach Problems
+```php
+// ❌ Hard to maintain, test, and modify
+class OrderService
+{
+    public function process(Order $order): void
+    {
+        $this->validate($order);
+        $this->processPayment($order);     // What if this fails?
+        $this->updateInventory($order);    // What if this is slow?
+        $this->sendEmail($order);          // What if email is down?
+        $this->generateInvoice($order);    // Getting complex...
+    }
+}
+```
+
+### Workflow Orchestrator Approach
+```php
+// ✅ Clear, testable, and flexible
+#[Orchestrator(channel: 'process.order')]
+public function processOrder(Order $order): array
+{
+    return ['validate', 'payment', 'inventory', 'email', 'invoice'];
+}
+
+// Each step is isolated, testable, and can be async
+#[Handler(channel: 'email', async: true)]
+public function sendEmail(Order $order): Order { ... }
+```
+
+### Benefits Over State Machines
+
+- **Focus on behavior, not state** - Define what happens, not state transitions
+- **No database storage** - Workflows are stateless and self-contained
+- **Zero migrations** - Deploy workflow changes instantly
+- **Easy testing** - Each step is independently testable
+- **Horizontal scaling** - Any server can process any step
+
+### Performance
+
+- **Stateless execution** - No database queries for workflow state
+- **Async support** - Heavy operations don't block
+- **Memory efficient** - No persistent workflow instances
+- **Scales horizontally** - Add more servers without coordination
+
+## Error Handling
+
+Workflow steps that fail are automatically wrapped with context:
+
+```php
+try {
+    $result = $orchestrator->execute('process.order', $order);
+} catch (WorkflowException $e) {
+    // Exception message: "Step 'payment' failed: Card declined"
+    Log::error('Workflow failed', [
+        'step' => $e->getFailedStep(), // Available if you extend the exception
+        'message' => $e->getMessage(),
+        'original' => $e->getPrevious(),
+    ]);
+}
+```
+
+## Testing
+
+Test workflows in isolation:
+
+```php
+use PHPUnit\Framework\TestCase;
+
+class OrderProcessorTest extends TestCase
+{
+    public function test_premium_customer_gets_discount(): void
+    {
+        $container = new SimpleContainer();
+        $orchestrator = WorkflowOrchestrator::create($container)
+            ->register(OrderProcessor::class);
+
+        $order = new Order($premiumCustomer, $items);
+
+        $result = $orchestrator->execute('process.order', $order);
+
+        $this->assertTrue($result->hasDiscount());
+        $this->assertTrue($result->isPaid());
+    }
+
+    public function test_regular_customer_no_discount(): void
+    {
+        $container = new SimpleContainer();
+        $orchestrator = WorkflowOrchestrator::create($container)
+            ->register(OrderProcessor::class);
+
+        $order = new Order($regularCustomer, $items);
+
+        $result = $orchestrator->execute('process.order', $order);
+
+        $this->assertFalse($result->hasDiscount());
+        $this->assertTrue($result->isPaid());
+    }
+}
+```
+
 ## Advanced Usage
+
+### Dynamic Workflows
+
+Build different workflows based on your business rules:
+
+```php
+#[Orchestrator(channel: 'process.user.registration')]
+public function processUserRegistration(User $user): array
+{
+    $steps = ['validate-email', 'create-account'];
+
+    // Different flow for enterprise users
+    if ($user->isEnterprise()) {
+        $steps[] = 'setup-organization';
+        $steps[] = 'assign-account-manager';
+        $steps[] = 'configure-billing';
+    } else {
+        $steps[] = 'setup-trial';
+        $steps[] = 'send-welcome-email';
+    }
+
+    // International users need additional steps
+    if ($user->isInternational()) {
+        $steps[] = 'setup-localization';
+        $steps[] = 'configure-timezone';
+    }
+
+    $steps[] = 'activate-account';
+    $steps[] = 'track-registration-metrics';
+
+    return $steps;
+}
+```
+
+### Headers and Context
+
+Pass metadata between steps without modifying your main payload:
+
+```php
+#[Handler(channel: 'enrich-customer-data', returnsHeaders: true)]
+public function enrichCustomerData(Order $order): array
+{
+    return [
+        'customer_tier' => $order->getCustomer()->getTier(),
+        'loyalty_points' => $order->getCustomer()->getLoyaltyPoints(),
+        'region' => $order->getShippingAddress()->getCountry(),
+    ];
+}
+
+#[Handler(channel: 'apply-regional-pricing')]
+public function applyRegionalPricing(
+    Order $order,
+    #[Header('customer_tier')] string $tier,
+    #[Header('region')] string $region
+): Order {
+    // Use header values for business logic
+    $discount = $this->calculateRegionalDiscount($tier, $region);
+    return $order->applyDiscount($discount);
+}
+```
 
 ### Async Steps
 
@@ -147,66 +310,6 @@ public function callExternalApi(Order $order): Order
 ```
 
 The timeout is measured in seconds using wall-clock time. A value of `0` (the default) means no time limit.
-
-### Headers and Context
-
-Pass metadata between steps without modifying your main payload:
-
-```php
-#[Handler(channel: 'enrich-customer-data', returnsHeaders: true)]
-public function enrichCustomerData(Order $order): array
-{
-    return [
-        'customer_tier' => $order->getCustomer()->getTier(),
-        'loyalty_points' => $order->getCustomer()->getLoyaltyPoints(),
-        'region' => $order->getShippingAddress()->getCountry(),
-    ];
-}
-
-#[Handler(channel: 'apply-regional-pricing')]
-public function applyRegionalPricing(
-    Order $order,
-    #[Header('customer_tier')] string $tier,
-    #[Header('region')] string $region
-): Order {
-    // Use header values for business logic
-    $discount = $this->calculateRegionalDiscount($tier, $region);
-    return $order->applyDiscount($discount);
-}
-```
-
-### Dynamic Workflows
-
-Build different workflows based on your business rules:
-
-```php
-#[Orchestrator(channel: 'process.user.registration')]
-public function processUserRegistration(User $user): array
-{
-    $steps = ['validate-email', 'create-account'];
-    
-    // Different flow for enterprise users
-    if ($user->isEnterprise()) {
-        $steps[] = 'setup-organization';
-        $steps[] = 'assign-account-manager';
-        $steps[] = 'configure-billing';
-    } else {
-        $steps[] = 'setup-trial';
-        $steps[] = 'send-welcome-email';
-    }
-    
-    // International users need additional steps
-    if ($user->isInternational()) {
-        $steps[] = 'setup-localization';
-        $steps[] = 'configure-timezone';
-    }
-    
-    $steps[] = 'activate-account';
-    $steps[] = 'track-registration-metrics';
-    
-    return $steps;
-}
-```
 
 ### Middleware
 
@@ -466,109 +569,6 @@ class MyCustomQueue implements QueueInterface
 }
 ```
 
-## Error Handling
-
-Workflow steps that fail are automatically wrapped with context:
-
-```php
-try {
-    $result = $orchestrator->execute('process.order', $order);
-} catch (WorkflowException $e) {
-    // Exception message: "Step 'payment' failed: Card declined"
-    Log::error('Workflow failed', [
-        'step' => $e->getFailedStep(), // Available if you extend the exception
-        'message' => $e->getMessage(),
-        'original' => $e->getPrevious(),
-    ]);
-}
-```
-
-## Testing
-
-Test workflows in isolation:
-
-```php
-use PHPUnit\Framework\TestCase;
-
-class OrderProcessorTest extends TestCase
-{
-    public function test_premium_customer_gets_discount(): void
-    {
-        $container = new SimpleContainer();
-        $orchestrator = WorkflowOrchestrator::create($container)
-            ->register(OrderProcessor::class);
-            
-        $order = new Order($premiumCustomer, $items);
-        
-        $result = $orchestrator->execute('process.order', $order);
-        
-        $this->assertTrue($result->hasDiscount());
-        $this->assertTrue($result->isPaid());
-    }
-    
-    public function test_regular_customer_no_discount(): void
-    {
-        $container = new SimpleContainer();
-        $orchestrator = WorkflowOrchestrator::create($container)
-            ->register(OrderProcessor::class);
-            
-        $order = new Order($regularCustomer, $items);
-        
-        $result = $orchestrator->execute('process.order', $order);
-        
-        $this->assertFalse($result->hasDiscount());
-        $this->assertTrue($result->isPaid());
-    }
-}
-```
-
-## Why Workflow Orchestrator?
-
-### Traditional Approach Problems
-```php
-// ❌ Hard to maintain, test, and modify
-class OrderService
-{
-    public function process(Order $order): void
-    {
-        $this->validate($order);
-        $this->processPayment($order);     // What if this fails?
-        $this->updateInventory($order);    // What if this is slow?
-        $this->sendEmail($order);          // What if email is down?
-        $this->generateInvoice($order);    // Getting complex...
-    }
-}
-```
-
-### Workflow Orchestrator Approach
-```php
-// ✅ Clear, testable, and flexible
-#[Orchestrator(channel: 'process.order')]
-public function processOrder(Order $order): array
-{
-    return ['validate', 'payment', 'inventory', 'email', 'invoice'];
-}
-
-// Each step is isolated, testable, and can be async
-#[Handler(channel: 'email', async: true)]
-public function sendEmail(Order $order): Order { ... }
-```
-
-## Benefits Over State Machines
-
-- **Focus on behavior, not state** - Define what happens, not state transitions
-- **No database storage** - Workflows are stateless and self-contained
-- **Zero migrations** - Deploy workflow changes instantly
-- **Easy testing** - Each step is independently testable
-- **Horizontal scaling** - Any server can process any step
-
-## Performance
-
-- **Stateless execution** - No database queries for workflow state
-- **Async support** - Heavy operations don't block
-- **Memory efficient** - No persistent workflow instances
-- **Scales horizontally** - Add more servers without coordination
-
 ## Requirements
 
 - PHP 8.3+
@@ -578,58 +578,7 @@ public function sendEmail(Order $order): Order { ... }
 
 ## Changelog
 
-### v1.4.0
-
-**Fixes:**
-- `WorkflowOrchestrator::processAsyncStep()` now exposes the `maxRetries` parameter (was only available via the engine directly)
-- Removed unused `Orchestrator::async` property — it was accepted but never read
-- `WorkflowMessage::fromArray()` now validates that the `payload` key exists, throwing `InvalidArgumentException` for malformed data
-- `SqliteQueue::pop()` now catches `Throwable` instead of `Exception` for consistency with the rest of the codebase
-
-**Tests:**
-- Added middleware execution ordering test (verifies FIFO order across multiple `withMiddleware()` calls)
-- Added `SimpleContainer` tests for classes with required constructor parameters (100% method coverage)
-
-### v1.3.0
-
-**Improvements:**
-- Completed `QueueInterface` with `size()` and `clear()` methods — now part of the contract, not just implementation details
-- Extracted `_retry_attempt` magic string to a private constant in `WorkflowEngine`
-- Consolidated duplicate exception handling in `executeStep()` into a single catch block
-- Cached `ReflectionMethod` objects in `invokeMethod()` to avoid redundant reflection on repeated step invocations
-- Extracted shared queue test base class (`AbstractQueueTest`) — eliminates ~80 lines of duplicated test code across `DatabaseQueueTest` and `RedisQueueTest`
-
-### v1.2.0
-
-**New Features:**
-- Step timeout support: `#[Handler(channel: 'step', timeout: 30)]` enforces wall-clock time limits on handlers
-- Event listener system: `EventListenerInterface` with `onStepStarted`, `onStepCompleted`, and `onStepFailed` hooks for observability
-- `WorkflowOrchestrator::withEventListener()` for adding listeners via the facade (immutable, chainable)
-- Attribute validation: `Handler` and `Orchestrator` now reject empty channel names at construction
-
-**Improvements:**
-- Moved `ext-pdo` from `require` to `suggest` in `composer.json` — only needed for `SqliteQueue`
-- Handler registry now stores timeout metadata
-
-### v1.1.0
-
-**New Features:**
-- Async retry logic: `processAsyncStep()` now supports configurable `maxRetries` (default 3) with automatic re-queuing of failed messages
-- `WorkflowOrchestrator::withMiddleware()` for adding middleware via the facade (immutable, chainable)
-- Cryptographically secure workflow IDs using `random_bytes()` instead of `uniqid()`
-
-**Bug Fixes:**
-- Parameter resolution now throws a clear `WorkflowException` when a typed parameter cannot be resolved, instead of silently passing the wrong type
-
-### v1.0.0
-
-**Security Fixes:**
-- Replaced unsafe `serialize()`/`unserialize()` with JSON encoding in `RedisQueue` and `SqliteQueue` to prevent object injection attacks
-- Added table name validation in `SqliteQueue` constructor to prevent SQL injection via malicious table names
-
-**Improvements:**
-- Added `WorkflowMessage::toArray()` and `WorkflowMessage::fromArray()` for safe, portable message serialization
-- Redis tests now gracefully skip (instead of erroring) when Redis server is unavailable
+See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## License
 
