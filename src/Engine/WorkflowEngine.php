@@ -95,9 +95,14 @@ readonly class WorkflowEngine
             if ($this->container->has($typeName)) {
                 return $this->container->get($typeName);
             }
+
+            throw new WorkflowException(
+                "Cannot resolve parameter '\${$param->getName()}' of type '{$typeName}': "
+                . "payload is not an instance of {$typeName} and no container binding found"
+            );
         }
 
-        // Return payload as fallback
+        // Return payload as fallback for builtin/untyped parameters
         return $payload;
     }
 
@@ -163,13 +168,15 @@ readonly class WorkflowEngine
     /**
      * @throws WorkflowException
      */
-    public function processAsyncStep(string $stepName): void
+    public function processAsyncStep(string $stepName, int $maxRetries = 3): void
     {
         $message = $this->queue->pop($stepName);
 
         if (!$message) {
             return;
         }
+
+        $attempt = (int) $message->getHeader('_retry_attempt', 0);
 
         try {
             $message = $this->executeStep($stepName, $message);
@@ -179,8 +186,17 @@ readonly class WorkflowEngine
                 $this->processWorkflow($message);
             }
         } catch (Throwable $e) {
-            // Handle error - we could implement retry logic here
-            throw new WorkflowException("Async step '$stepName' failed: " . $e->getMessage(), 0, $e, $stepName);
+            if ($attempt < $maxRetries) {
+                // Re-queue with incremented retry count
+                $retryMessage = $message->withHeader('_retry_attempt', $attempt + 1);
+                $this->queue->push($stepName, $retryMessage);
+                return;
+            }
+
+            throw new WorkflowException(
+                "Async step '$stepName' failed after " . ($attempt + 1) . " attempt(s): " . $e->getMessage(),
+                0, $e, $stepName
+            );
         }
     }
 }

@@ -4,6 +4,7 @@ namespace WorkflowOrchestrator;
 
 use WorkflowOrchestrator\Container\SimpleContainer;
 use WorkflowOrchestrator\Contracts\ContainerInterface;
+use WorkflowOrchestrator\Contracts\MiddlewareInterface;
 use WorkflowOrchestrator\Contracts\QueueInterface;
 use WorkflowOrchestrator\Engine\WorkflowEngine;
 use WorkflowOrchestrator\Exceptions\WorkflowException;
@@ -53,6 +54,11 @@ class WorkflowOrchestrator
     public function processAsyncStep(string $stepName): void
     {
         $this->engine->processAsyncStep($stepName);
+    }
+
+    public function withMiddleware(MiddlewareInterface $middleware): self
+    {
+        return new self($this->container, $this->queue, [...$this->middleware, $middleware]);
     }
 
     public function withQueue(QueueInterface $queue): self

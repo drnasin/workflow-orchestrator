@@ -297,12 +297,12 @@ class WorkflowEngineTest extends TestCase
         $this->engine->execute('failing-async-workflow', new TestOrder('ORD-133'));
 
         try {
-            // Process the queued step which should fail
-            $this->engine->processAsyncStep('failing-async-step');
+            // Process the queued step which should fail immediately (no retries)
+            $this->engine->processAsyncStep('failing-async-step', maxRetries: 0);
             $this->fail('Expected WorkflowException to be thrown');
         } catch (WorkflowException $e) {
             $this->assertSame('failing-async-step', $e->getFailedStep());
-            $this->assertStringContainsString("Async step 'failing-async-step' failed", $e->getMessage());
+            $this->assertStringContainsString("Async step 'failing-async-step' failed after 1 attempt(s)", $e->getMessage());
         }
     }
 
@@ -312,6 +312,99 @@ class WorkflowEngineTest extends TestCase
         $result = $engine->register(OrderWorkflow::class);
 
         $this->assertSame($engine, $result);
+    }
+
+    public function test_async_step_retries_on_failure(): void
+    {
+        $failingAsyncWorkflow = new class {
+            public int $attempts = 0;
+
+            #[Orchestrator(channel: 'retry-workflow')]
+            public function retryWorkflow(TestOrder $order): array
+            {
+                return ['retry-step'];
+            }
+
+            #[Handler(channel: 'retry-step', async: true)]
+            public function retryStep(TestOrder $order): TestOrder
+            {
+                $this->attempts++;
+                throw new \RuntimeException('Transient error');
+            }
+        };
+
+        $this->container->set(get_class($failingAsyncWorkflow), $failingAsyncWorkflow);
+        $this->engine->register($failingAsyncWorkflow);
+
+        // Execute workflow (gets queued)
+        $this->engine->execute('retry-workflow', new TestOrder('ORD-RETRY'));
+
+        // First attempt fails, message should be re-queued
+        $this->engine->processAsyncStep('retry-step', maxRetries: 3);
+        $this->assertSame(1, $this->queue->size('retry-step'));
+
+        // Second attempt fails, re-queued again
+        $this->engine->processAsyncStep('retry-step', maxRetries: 3);
+        $this->assertSame(1, $this->queue->size('retry-step'));
+
+        // Third attempt fails, re-queued again
+        $this->engine->processAsyncStep('retry-step', maxRetries: 3);
+        $this->assertSame(1, $this->queue->size('retry-step'));
+
+        // Fourth attempt (attempt index 3 == maxRetries), should throw
+        $this->expectException(WorkflowException::class);
+        $this->expectExceptionMessage("failed after 4 attempt(s)");
+        $this->engine->processAsyncStep('retry-step', maxRetries: 3);
+    }
+
+    public function test_async_step_no_retry_when_max_is_zero(): void
+    {
+        $failingAsyncWorkflow = new class {
+            #[Orchestrator(channel: 'no-retry-workflow')]
+            public function noRetryWorkflow(TestOrder $order): array
+            {
+                return ['no-retry-step'];
+            }
+
+            #[Handler(channel: 'no-retry-step', async: true)]
+            public function noRetryStep(TestOrder $order): TestOrder
+            {
+                throw new \RuntimeException('Permanent error');
+            }
+        };
+
+        $this->container->set(get_class($failingAsyncWorkflow), $failingAsyncWorkflow);
+        $this->engine->register($failingAsyncWorkflow);
+
+        $this->engine->execute('no-retry-workflow', new TestOrder('ORD-NORETRY'));
+
+        $this->expectException(WorkflowException::class);
+        $this->expectExceptionMessage("failed after 1 attempt(s)");
+        $this->engine->processAsyncStep('no-retry-step', maxRetries: 0);
+    }
+
+    public function test_throws_exception_for_unresolvable_parameter(): void
+    {
+        $unresolvedWorkflow = new class {
+            #[Orchestrator(channel: 'unresolved-workflow')]
+            public function unresolvedWorkflow(TestOrder $order): array
+            {
+                return ['unresolved-step'];
+            }
+
+            #[Handler(channel: 'unresolved-step')]
+            public function unresolvedStep(\DateTimeInterface $date): string
+            {
+                return 'should not reach here';
+            }
+        };
+
+        $this->container->set(get_class($unresolvedWorkflow), $unresolvedWorkflow);
+        $this->engine->register($unresolvedWorkflow);
+
+        $this->expectException(WorkflowException::class);
+        $this->expectExceptionMessage("Cannot resolve parameter '\$date'");
+        $this->engine->execute('unresolved-workflow', new TestOrder('ORD-UNRESOLVED'));
     }
 
     protected function setUp(): void

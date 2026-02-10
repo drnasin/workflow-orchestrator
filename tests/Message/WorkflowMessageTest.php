@@ -104,6 +104,16 @@ class WorkflowMessageTest extends TestCase
         $this->assertSame($newSteps, $newMessage->getSteps());
     }
 
+    public function test_generates_unique_cryptographic_ids(): void
+    {
+        $message1 = new WorkflowMessage('payload1');
+        $message2 = new WorkflowMessage('payload2');
+
+        $this->assertNotSame($message1->getId(), $message2->getId());
+        $this->assertMatchesRegularExpression('/^wf_[0-9a-f]{32}$/', $message1->getId());
+        $this->assertMatchesRegularExpression('/^wf_[0-9a-f]{32}$/', $message2->getId());
+    }
+
     public function test_preserves_id_across_transformations(): void
     {
         $message = new WorkflowMessage('payload', ['step1'], [], 'test-id');

@@ -471,6 +471,16 @@ public function sendEmail(Order $order): Order { ... }
 
 ## Changelog
 
+### v1.1.0
+
+**New Features:**
+- Async retry logic: `processAsyncStep()` now supports configurable `maxRetries` (default 3) with automatic re-queuing of failed messages
+- `WorkflowOrchestrator::withMiddleware()` for adding middleware via the facade (immutable, chainable)
+- Cryptographically secure workflow IDs using `random_bytes()` instead of `uniqid()`
+
+**Bug Fixes:**
+- Parameter resolution now throws a clear `WorkflowException` when a typed parameter cannot be resolved, instead of silently passing the wrong type
+
 ### v1.0.0
 
 **Security Fixes:**

@@ -8,3 +8,4 @@ coverage
 CLAUDE.md
 .phpunit.result.cache
 .claude
+dump.rdb

@@ -4,6 +4,8 @@ namespace WorkflowOrchestrator\Tests;
 use PHPUnit\Framework\TestCase;
 use WorkflowOrchestrator\Attributes\Handler;
 use WorkflowOrchestrator\Attributes\Orchestrator;
+use WorkflowOrchestrator\Contracts\MiddlewareInterface;
+use WorkflowOrchestrator\Message\WorkflowMessage;
 use WorkflowOrchestrator\WorkflowOrchestrator;
 
 class SimpleOrder
@@ -100,5 +102,68 @@ class WorkflowOrchestratorTest extends TestCase
         $orchestrator->processAsyncStep('nonexistent-queue');
 
         $this->assertTrue(true);
+    }
+
+    public function test_with_middleware_adds_middleware(): void
+    {
+        $middleware = new class implements MiddlewareInterface {
+            public function handle(WorkflowMessage $message, callable $next): WorkflowMessage
+            {
+                return $next($message->withHeader('middleware_applied', true));
+            }
+        };
+
+        $orchestrator = WorkflowOrchestrator::create()
+            ->withMiddleware($middleware)
+            ->register(SimpleWorkflow::class);
+
+        $order = new SimpleOrder('ORD-MW');
+        $result = $orchestrator->execute('simple.process', $order);
+
+        $this->assertInstanceOf(SimpleOrder::class, $result);
+        $this->assertTrue($result->validated);
+        $this->assertTrue($result->paid);
+    }
+
+    public function test_with_middleware_is_immutable(): void
+    {
+        $middleware = new class implements MiddlewareInterface {
+            public function handle(WorkflowMessage $message, callable $next): WorkflowMessage
+            {
+                return $next($message);
+            }
+        };
+
+        $original = WorkflowOrchestrator::create();
+        $withMiddleware = $original->withMiddleware($middleware);
+
+        $this->assertNotSame($original, $withMiddleware);
+    }
+
+    public function test_with_queue_preserves_middleware(): void
+    {
+        $tracker = new \stdClass();
+        $tracker->applied = false;
+
+        $middleware = new class($tracker) implements MiddlewareInterface {
+            public function __construct(private \stdClass $tracker) {}
+
+            public function handle(WorkflowMessage $message, callable $next): WorkflowMessage
+            {
+                $this->tracker->applied = true;
+                return $next($message);
+            }
+        };
+
+        $queue = new \WorkflowOrchestrator\Queue\InMemoryQueue();
+
+        $orchestrator = WorkflowOrchestrator::create()
+            ->withMiddleware($middleware)
+            ->withQueue($queue)
+            ->register(SimpleWorkflow::class);
+
+        $orchestrator->execute('simple.process', new SimpleOrder('ORD-QMW'));
+
+        $this->assertTrue($tracker->applied);
     }
 }

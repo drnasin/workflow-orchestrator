@@ -9,7 +9,7 @@ class WorkflowMessage
         private readonly array $headers = [],
         private string $id = ''
     ) {
-        $this->id = $id ?: uniqid('wf_', true);
+        $this->id = $id !== '' ? $id : 'wf_' . bin2hex(random_bytes(16));
     }
 
     public function getId(): string
