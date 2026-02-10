@@ -92,9 +92,11 @@ That's it! The workflow will:
 
 - ✅ **Stateless workflow execution** - No database storage required
 - ✅ **Dynamic step routing** - Workflows adapt based on data
-- ✅ **Async step processing** - Heavy operations run in background
+- ✅ **Async step processing** - Heavy operations run in background with configurable retry
 - ✅ **Header/metadata support** - Pass context between steps
 - ✅ **Middleware support** - Add cross-cutting concerns
+- ✅ **Step timeouts** - Enforce time limits on individual handlers
+- ✅ **Event listeners** - Track step execution for logging, metrics, and monitoring
 - ✅ **Clean PHP 8+ API** - Uses modern attributes and readonly properties
 - ✅ **Container integration** - Works with any PSR-11 container
 - ✅ **Zero dependencies** - Only requires PSR interfaces
@@ -114,6 +116,37 @@ public function generateInvoice(Order $order): Order
     return $order;
 }
 ```
+
+Process queued steps with configurable retry:
+
+```php
+// Process with default 3 retries
+$orchestrator->processAsyncStep('generate-invoice');
+
+// Process with custom retry limit
+$orchestrator->processAsyncStep('generate-invoice', maxRetries: 5);
+
+// No retries — fail immediately on error
+$orchestrator->processAsyncStep('generate-invoice', maxRetries: 0);
+```
+
+Failed steps are automatically re-queued until retries are exhausted, then a `WorkflowException` is thrown.
+
+### Step Timeouts
+
+Enforce time limits on individual handlers:
+
+```php
+#[Handler(channel: 'call-external-api', timeout: 30)]
+public function callExternalApi(Order $order): Order
+{
+    // If this takes longer than 30 seconds, a WorkflowException is thrown
+    $response = $this->apiClient->submit($order);
+    return $order->withResponse($response);
+}
+```
+
+The timeout is measured in seconds using wall-clock time. A value of `0` (the default) means no time limit.
 
 ### Headers and Context
 
@@ -174,6 +207,80 @@ public function processUserRegistration(User $user): array
     return $steps;
 }
 ```
+
+### Middleware
+
+Add cross-cutting concerns that run before every workflow:
+
+```php
+use WorkflowOrchestrator\Contracts\MiddlewareInterface;
+use WorkflowOrchestrator\Message\WorkflowMessage;
+
+class LoggingMiddleware implements MiddlewareInterface
+{
+    public function handle(WorkflowMessage $message, callable $next): WorkflowMessage
+    {
+        Log::info('Workflow started', ['id' => $message->getId()]);
+        return $next($message);
+    }
+}
+
+class AuthorizationMiddleware implements MiddlewareInterface
+{
+    public function handle(WorkflowMessage $message, callable $next): WorkflowMessage
+    {
+        if (!$message->getHeader('authorized')) {
+            throw new \RuntimeException('Unauthorized workflow execution');
+        }
+        return $next($message);
+    }
+}
+
+$orchestrator = WorkflowOrchestrator::create()
+    ->withMiddleware(new LoggingMiddleware())
+    ->withMiddleware(new AuthorizationMiddleware())
+    ->register(OrderProcessor::class);
+```
+
+Middleware executes in the order added. Each call to `withMiddleware()` returns a new immutable instance.
+
+### Event Listeners
+
+Track step execution for logging, metrics, or monitoring:
+
+```php
+use WorkflowOrchestrator\Contracts\EventListenerInterface;
+use WorkflowOrchestrator\Message\WorkflowMessage;
+
+class MetricsListener implements EventListenerInterface
+{
+    public function onStepStarted(string $stepName, WorkflowMessage $message): void
+    {
+        Metrics::increment("workflow.step.{$stepName}.started");
+    }
+
+    public function onStepCompleted(string $stepName, WorkflowMessage $message, float $duration): void
+    {
+        Metrics::timing("workflow.step.{$stepName}.duration", $duration);
+        Metrics::increment("workflow.step.{$stepName}.completed");
+    }
+
+    public function onStepFailed(string $stepName, WorkflowMessage $message, \Throwable $error, float $duration): void
+    {
+        Metrics::increment("workflow.step.{$stepName}.failed");
+        Log::error("Step {$stepName} failed after {$duration}s", [
+            'error' => $error->getMessage(),
+            'workflow_id' => $message->getId(),
+        ]);
+    }
+}
+
+$orchestrator = WorkflowOrchestrator::create()
+    ->withEventListener(new MetricsListener())
+    ->register(OrderProcessor::class);
+```
+
+Events fire for every step execution, including async steps. The `$duration` parameter is measured in seconds with nanosecond precision.
 
 ## Container Integration
 
