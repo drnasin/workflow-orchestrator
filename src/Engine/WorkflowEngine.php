@@ -8,6 +8,7 @@ use ReflectionParameter;
 use Throwable;
 use WorkflowOrchestrator\Attributes\Header;
 use WorkflowOrchestrator\Contracts\ContainerInterface;
+use WorkflowOrchestrator\Contracts\EventListenerInterface;
 use WorkflowOrchestrator\Contracts\QueueInterface;
 use WorkflowOrchestrator\Exceptions\WorkflowException;
 use WorkflowOrchestrator\Message\WorkflowMessage;
@@ -19,7 +20,11 @@ readonly class WorkflowEngine
     private QueueInterface $queue;
 
     public function __construct(
-        private ContainerInterface $container, private HandlerRegistry $registry = new HandlerRegistry(), ?QueueInterface $queue = null, private array $middleware = []
+        private ContainerInterface $container,
+        private HandlerRegistry $registry = new HandlerRegistry(),
+        ?QueueInterface $queue = null,
+        private array $middleware = [],
+        private array $eventListeners = [],
     ) {
         $this->queue = $queue ?? new InMemoryQueue();
     }
@@ -150,17 +155,44 @@ readonly class WorkflowEngine
     {
         $handlerConfig = $this->registry->getHandler($stepName);
         $instance = $this->container->get($handlerConfig['class']);
+        $timeout = $handlerConfig['timeout'] ?? 0;
+
+        $this->notifyStepStarted($stepName, $message);
+        $startTime = hrtime(true);
 
         try {
             $result = $this->invokeMethod($instance, $handlerConfig['method'], $message->getPayload(), $message);
+            $duration = (hrtime(true) - $startTime) / 1e9;
 
-            if ($handlerConfig['returnsHeaders']) {
-                return $message->withHeaders(is_array($result) ? $result : []);
+            if ($timeout > 0 && $duration > $timeout) {
+                $exception = new WorkflowException(
+                    "Step '$stepName' exceeded timeout of {$timeout}s (took " . round($duration, 2) . "s)",
+                    0, null, $stepName
+                );
+                $this->notifyStepFailed($stepName, $message, $exception, $duration);
+                throw $exception;
             }
 
-            return $message->withPayload($result);
+            if ($handlerConfig['returnsHeaders']) {
+                $resultMessage = $message->withHeaders(is_array($result) ? $result : []);
+            } else {
+                $resultMessage = $message->withPayload($result);
+            }
+
+            $this->notifyStepCompleted($stepName, $resultMessage, $duration);
+
+            return $resultMessage;
+        } catch (WorkflowException $e) {
+            // Re-throw WorkflowExceptions (including timeout) without wrapping
+            if ($e->getFailedStep() !== null) {
+                throw $e;
+            }
+            $duration = (hrtime(true) - $startTime) / 1e9;
+            $this->notifyStepFailed($stepName, $message, $e, $duration);
+            throw new WorkflowException("Step '$stepName' failed: " . $e->getMessage(), 0, $e, $stepName);
         } catch (Throwable $e) {
-            // Handle errors - wrap in WorkflowException with step context
+            $duration = (hrtime(true) - $startTime) / 1e9;
+            $this->notifyStepFailed($stepName, $message, $e, $duration);
             throw new WorkflowException("Step '$stepName' failed: " . $e->getMessage(), 0, $e, $stepName);
         }
     }
@@ -197,6 +229,27 @@ readonly class WorkflowEngine
                 "Async step '$stepName' failed after " . ($attempt + 1) . " attempt(s): " . $e->getMessage(),
                 0, $e, $stepName
             );
+        }
+    }
+
+    private function notifyStepStarted(string $stepName, WorkflowMessage $message): void
+    {
+        foreach ($this->eventListeners as $listener) {
+            $listener->onStepStarted($stepName, $message);
+        }
+    }
+
+    private function notifyStepCompleted(string $stepName, WorkflowMessage $message, float $duration): void
+    {
+        foreach ($this->eventListeners as $listener) {
+            $listener->onStepCompleted($stepName, $message, $duration);
+        }
+    }
+
+    private function notifyStepFailed(string $stepName, WorkflowMessage $message, Throwable $error, float $duration): void
+    {
+        foreach ($this->eventListeners as $listener) {
+            $listener->onStepFailed($stepName, $message, $error, $duration);
         }
     }
 }

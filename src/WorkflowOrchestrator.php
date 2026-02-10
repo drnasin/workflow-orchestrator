@@ -4,6 +4,7 @@ namespace WorkflowOrchestrator;
 
 use WorkflowOrchestrator\Container\SimpleContainer;
 use WorkflowOrchestrator\Contracts\ContainerInterface;
+use WorkflowOrchestrator\Contracts\EventListenerInterface;
 use WorkflowOrchestrator\Contracts\MiddlewareInterface;
 use WorkflowOrchestrator\Contracts\QueueInterface;
 use WorkflowOrchestrator\Engine\WorkflowEngine;
@@ -17,12 +18,18 @@ class WorkflowOrchestrator
     private WorkflowEngine $engine;
 
     public function __construct(
-        private ?ContainerInterface $container = null, 
+        private ?ContainerInterface $container = null,
         private readonly ?QueueInterface $queue = null,
-        private readonly array $middleware = []
+        private readonly array $middleware = [],
+        private readonly array $eventListeners = [],
     ) {
         $this->container ??= new SimpleContainer();
-        $this->engine = new WorkflowEngine($this->container, queue: $this->queue, middleware: $this->middleware);
+        $this->engine = new WorkflowEngine(
+            $this->container,
+            queue: $this->queue,
+            middleware: $this->middleware,
+            eventListeners: $this->eventListeners,
+        );
     }
 
     /**
@@ -58,12 +65,17 @@ class WorkflowOrchestrator
 
     public function withMiddleware(MiddlewareInterface $middleware): self
     {
-        return new self($this->container, $this->queue, [...$this->middleware, $middleware]);
+        return new self($this->container, $this->queue, [...$this->middleware, $middleware], $this->eventListeners);
+    }
+
+    public function withEventListener(EventListenerInterface $listener): self
+    {
+        return new self($this->container, $this->queue, $this->middleware, [...$this->eventListeners, $listener]);
     }
 
     public function withQueue(QueueInterface $queue): self
     {
-        return new self($this->container, $queue, $this->middleware);
+        return new self($this->container, $queue, $this->middleware, $this->eventListeners);
     }
 
     public function getEngine(): WorkflowEngine

@@ -53,6 +53,7 @@ class HandlerRegistry
                 'method'         => $method->getName(),
                 'async'          => $handler->async,
                 'returnsHeaders' => $handler->returnsHeaders,
+                'timeout'        => $handler->timeout,
             ];
         }
     }

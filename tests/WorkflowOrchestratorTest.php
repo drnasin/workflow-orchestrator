@@ -4,6 +4,7 @@ namespace WorkflowOrchestrator\Tests;
 use PHPUnit\Framework\TestCase;
 use WorkflowOrchestrator\Attributes\Handler;
 use WorkflowOrchestrator\Attributes\Orchestrator;
+use WorkflowOrchestrator\Contracts\EventListenerInterface;
 use WorkflowOrchestrator\Contracts\MiddlewareInterface;
 use WorkflowOrchestrator\Message\WorkflowMessage;
 use WorkflowOrchestrator\WorkflowOrchestrator;
@@ -165,5 +166,43 @@ class WorkflowOrchestratorTest extends TestCase
         $orchestrator->execute('simple.process', new SimpleOrder('ORD-QMW'));
 
         $this->assertTrue($tracker->applied);
+    }
+
+    public function test_with_event_listener_is_immutable(): void
+    {
+        $listener = new class implements EventListenerInterface {
+            public function onStepStarted(string $stepName, WorkflowMessage $message): void {}
+            public function onStepCompleted(string $stepName, WorkflowMessage $message, float $duration): void {}
+            public function onStepFailed(string $stepName, WorkflowMessage $message, \Throwable $error, float $duration): void {}
+        };
+
+        $original = WorkflowOrchestrator::create();
+        $withListener = $original->withEventListener($listener);
+
+        $this->assertNotSame($original, $withListener);
+    }
+
+    public function test_with_event_listener_fires_events(): void
+    {
+        $tracker = new \stdClass();
+        $tracker->steps = [];
+
+        $listener = new class($tracker) implements EventListenerInterface {
+            public function __construct(private \stdClass $tracker) {}
+            public function onStepStarted(string $stepName, WorkflowMessage $message): void
+            {
+                $this->tracker->steps[] = $stepName;
+            }
+            public function onStepCompleted(string $stepName, WorkflowMessage $message, float $duration): void {}
+            public function onStepFailed(string $stepName, WorkflowMessage $message, \Throwable $error, float $duration): void {}
+        };
+
+        $orchestrator = WorkflowOrchestrator::create()
+            ->withEventListener($listener)
+            ->register(SimpleWorkflow::class);
+
+        $orchestrator->execute('simple.process', new SimpleOrder('ORD-EVT'));
+
+        $this->assertSame(['validate', 'payment'], $tracker->steps);
     }
 }

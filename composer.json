@@ -17,10 +17,10 @@
   ],
   "require": {
     "php": "^8.3",
-    "psr/container": "^2.0",
-    "ext-pdo": "*"
+    "psr/container": "^2.0"
   },
   "suggest": {
+    "ext-pdo": "Required for SqliteQueue functionality",
     "ext-redis": "Required for RedisQueue functionality"
   },
   "require-dev": {

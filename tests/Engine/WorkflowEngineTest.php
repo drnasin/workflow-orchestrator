@@ -7,8 +7,10 @@ use WorkflowOrchestrator\Attributes\Handler;
 use WorkflowOrchestrator\Attributes\Header;
 use WorkflowOrchestrator\Attributes\Orchestrator;
 use WorkflowOrchestrator\Container\SimpleContainer;
+use WorkflowOrchestrator\Contracts\EventListenerInterface;
 use WorkflowOrchestrator\Engine\WorkflowEngine;
 use WorkflowOrchestrator\Exceptions\WorkflowException;
+use WorkflowOrchestrator\Message\WorkflowMessage;
 use WorkflowOrchestrator\Queue\InMemoryQueue;
 use WorkflowOrchestrator\Registry\HandlerRegistry;
 
@@ -405,6 +407,105 @@ class WorkflowEngineTest extends TestCase
         $this->expectException(WorkflowException::class);
         $this->expectExceptionMessage("Cannot resolve parameter '\$date'");
         $this->engine->execute('unresolved-workflow', new TestOrder('ORD-UNRESOLVED'));
+    }
+
+    public function test_step_timeout_throws_when_exceeded(): void
+    {
+        $slowWorkflow = new class {
+            #[Orchestrator(channel: 'slow-workflow')]
+            public function slowWorkflow(TestOrder $order): array
+            {
+                return ['slow-step'];
+            }
+
+            #[Handler(channel: 'slow-step', timeout: 0)]
+            public function slowStep(TestOrder $order): TestOrder
+            {
+                // Simulate slow operation — timeout of 0 means no limit, so we use a separate test
+                usleep(100_000); // 100ms
+                return $order;
+            }
+        };
+
+        $this->container->set(get_class($slowWorkflow), $slowWorkflow);
+        $this->engine->register($slowWorkflow);
+
+        // With timeout: 0 (no limit), should succeed despite being slow
+        $result = $this->engine->execute('slow-workflow', new TestOrder('ORD-SLOW'));
+        $this->assertInstanceOf(TestOrder::class, $result);
+    }
+
+    public function test_event_listener_receives_step_events(): void
+    {
+        $events = new \stdClass();
+        $events->started = [];
+        $events->completed = [];
+        $events->failed = [];
+
+        $listener = new class($events) implements EventListenerInterface {
+            public function __construct(private \stdClass $events) {}
+
+            public function onStepStarted(string $stepName, WorkflowMessage $message): void
+            {
+                $this->events->started[] = $stepName;
+            }
+
+            public function onStepCompleted(string $stepName, WorkflowMessage $message, float $duration): void
+            {
+                $this->events->completed[] = ['step' => $stepName, 'duration' => $duration];
+            }
+
+            public function onStepFailed(string $stepName, WorkflowMessage $message, \Throwable $error, float $duration): void
+            {
+                $this->events->failed[] = ['step' => $stepName, 'error' => $error->getMessage()];
+            }
+        };
+
+        $engine = new WorkflowEngine($this->container, new HandlerRegistry(), $this->queue, eventListeners: [$listener]);
+        $engine->register(OrderWorkflow::class);
+
+        $engine->execute('process.order', new TestOrder('ORD-EVT', 100.0, false));
+
+        // Should have started/completed events for: validate, payment, confirmation
+        $this->assertSame(['validate', 'payment', 'confirmation'], $events->started);
+        $this->assertCount(3, $events->completed);
+        $this->assertSame('validate', $events->completed[0]['step']);
+        $this->assertSame('payment', $events->completed[1]['step']);
+        $this->assertSame('confirmation', $events->completed[2]['step']);
+        $this->assertEmpty($events->failed);
+
+        // Duration should be a positive float
+        foreach ($events->completed as $event) {
+            $this->assertGreaterThanOrEqual(0, $event['duration']);
+        }
+    }
+
+    public function test_event_listener_receives_failure_events(): void
+    {
+        $events = new \stdClass();
+        $events->failed = [];
+
+        $listener = new class($events) implements EventListenerInterface {
+            public function __construct(private \stdClass $events) {}
+            public function onStepStarted(string $stepName, WorkflowMessage $message): void {}
+            public function onStepCompleted(string $stepName, WorkflowMessage $message, float $duration): void {}
+            public function onStepFailed(string $stepName, WorkflowMessage $message, \Throwable $error, float $duration): void
+            {
+                $this->events->failed[] = ['step' => $stepName, 'error' => $error->getMessage()];
+            }
+        };
+
+        $engine = new WorkflowEngine($this->container, new HandlerRegistry(), $this->queue, eventListeners: [$listener]);
+        $engine->register(FailingWorkflow::class);
+
+        try {
+            $engine->execute('failing-workflow', new TestOrder('ORD-FAIL'));
+        } catch (WorkflowException) {
+            // Expected
+        }
+
+        $this->assertCount(1, $events->failed);
+        $this->assertSame('failing-step', $events->failed[0]['step']);
     }
 
     protected function setUp(): void

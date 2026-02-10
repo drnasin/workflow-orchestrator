@@ -115,6 +115,35 @@ class HandlerRegistryTest extends TestCase
         $this->assertFalse($this->registry->hasHandler('nonexistent'));
     }
 
+    public function test_rejects_empty_handler_channel(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Handler channel name cannot be empty');
+        new Handler(channel: '');
+    }
+
+    public function test_rejects_whitespace_handler_channel(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Handler channel name cannot be empty');
+        new Handler(channel: '   ');
+    }
+
+    public function test_rejects_empty_orchestrator_channel(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Orchestrator channel name cannot be empty');
+        new Orchestrator(channel: '');
+    }
+
+    public function test_stores_handler_timeout(): void
+    {
+        $this->registry->registerClass(TestWorkflowClass::class);
+
+        $handler = $this->registry->getHandler('test.handler');
+        $this->assertSame(0, $handler['timeout']);
+    }
+
     protected function setUp(): void
     {
         $this->registry = new HandlerRegistry();
