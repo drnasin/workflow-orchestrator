@@ -471,6 +471,18 @@ public function sendEmail(Order $order): Order { ... }
 
 ## Changelog
 
+### v1.2.0
+
+**New Features:**
+- Step timeout support: `#[Handler(channel: 'step', timeout: 30)]` enforces wall-clock time limits on handlers
+- Event listener system: `EventListenerInterface` with `onStepStarted`, `onStepCompleted`, and `onStepFailed` hooks for observability
+- `WorkflowOrchestrator::withEventListener()` for adding listeners via the facade (immutable, chainable)
+- Attribute validation: `Handler` and `Orchestrator` now reject empty channel names at construction
+
+**Improvements:**
+- Moved `ext-pdo` from `require` to `suggest` in `composer.json` — only needed for `SqliteQueue`
+- Handler registry now stores timeout metadata
+
 ### v1.1.0
 
 **New Features:**
