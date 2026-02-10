@@ -53,7 +53,6 @@ class HandlerRegistryTest extends TestCase
         $orchestrator = $this->registry->getOrchestrator('test.orchestrator');
         $this->assertSame(TestWorkflowClass::class, $orchestrator['class']);
         $this->assertSame('orchestrate', $orchestrator['method']);
-        $this->assertFalse($orchestrator['async']);
     }
 
     public function test_registers_handlers_from_class(): void

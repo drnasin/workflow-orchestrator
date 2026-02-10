@@ -86,6 +86,10 @@ class WorkflowMessage
 
     public static function fromArray(array $data): self
     {
+        if (!array_key_exists('payload', $data)) {
+            throw new \InvalidArgumentException('Missing required key "payload" in message data');
+        }
+
         return new self(
             $data['payload'],
             $data['steps'] ?? [],

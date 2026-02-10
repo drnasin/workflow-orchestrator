@@ -37,7 +37,6 @@ class HandlerRegistry
             $this->orchestrators[$orchestrator->channel] = [
                 'class'  => $className,
                 'method' => $method->getName(),
-                'async'  => $orchestrator->async,
             ];
         }
     }

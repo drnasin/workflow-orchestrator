@@ -13,6 +13,13 @@ class TestService
     }
 }
 
+class ServiceWithRequiredParam
+{
+    public function __construct(public string $required, public string $optional = 'default')
+    {
+    }
+}
+
 class SimpleContainerTest extends TestCase
 {
     private SimpleContainer $container;
@@ -79,6 +86,18 @@ class SimpleContainerTest extends TestCase
         $this->assertSame(1, $callCount);
         $this->assertSame($service1, $service2);
         $this->assertSame('call-1', $service1->value);
+    }
+
+    public function test_cannot_auto_resolve_class_with_required_params(): void
+    {
+        $this->assertFalse($this->container->has(ServiceWithRequiredParam::class));
+    }
+
+    public function test_throws_for_class_with_required_params(): void
+    {
+        $this->expectException(ContainerException::class);
+
+        $this->container->get(ServiceWithRequiredParam::class);
     }
 
     protected function setUp(): void

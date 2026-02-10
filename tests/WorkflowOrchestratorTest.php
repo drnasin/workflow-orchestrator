@@ -168,6 +168,49 @@ class WorkflowOrchestratorTest extends TestCase
         $this->assertTrue($tracker->applied);
     }
 
+    public function test_multiple_middleware_execute_in_order(): void
+    {
+        $tracker = new \stdClass();
+        $tracker->order = [];
+
+        $first = new class($tracker) implements MiddlewareInterface {
+            public function __construct(private \stdClass $tracker) {}
+            public function handle(WorkflowMessage $message, callable $next): WorkflowMessage
+            {
+                $this->tracker->order[] = 'first';
+                return $next($message);
+            }
+        };
+
+        $second = new class($tracker) implements MiddlewareInterface {
+            public function __construct(private \stdClass $tracker) {}
+            public function handle(WorkflowMessage $message, callable $next): WorkflowMessage
+            {
+                $this->tracker->order[] = 'second';
+                return $next($message);
+            }
+        };
+
+        $third = new class($tracker) implements MiddlewareInterface {
+            public function __construct(private \stdClass $tracker) {}
+            public function handle(WorkflowMessage $message, callable $next): WorkflowMessage
+            {
+                $this->tracker->order[] = 'third';
+                return $next($message);
+            }
+        };
+
+        $orchestrator = WorkflowOrchestrator::create()
+            ->withMiddleware($first)
+            ->withMiddleware($second)
+            ->withMiddleware($third)
+            ->register(SimpleWorkflow::class);
+
+        $orchestrator->execute('simple.process', new SimpleOrder('ORD-ORD'));
+
+        $this->assertSame(['first', 'second', 'third'], $tracker->order);
+    }
+
     public function test_with_event_listener_is_immutable(): void
     {
         $listener = new class implements EventListenerInterface {

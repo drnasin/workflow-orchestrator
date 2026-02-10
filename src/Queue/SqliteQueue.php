@@ -2,8 +2,8 @@
 
 namespace WorkflowOrchestrator\Queue;
 
-use Exception;
 use InvalidArgumentException;
+use Throwable;
 use PDO;
 use WorkflowOrchestrator\Contracts\QueueInterface;
 use WorkflowOrchestrator\Message\WorkflowMessage;
@@ -53,7 +53,7 @@ class SqliteQueue implements QueueInterface
     }
 
     /**
-     * @throws Exception
+     * @throws Throwable
      */
     public function pop(string $queue): ?WorkflowMessage
     {
@@ -81,7 +81,7 @@ class SqliteQueue implements QueueInterface
             $this->pdo->commit();
 
             return WorkflowMessage::fromArray(json_decode($row['message_data'], true, 512, JSON_THROW_ON_ERROR));
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $this->pdo->rollBack();
             throw $e;
         }

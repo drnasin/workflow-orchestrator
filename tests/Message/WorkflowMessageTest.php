@@ -114,6 +114,14 @@ class WorkflowMessageTest extends TestCase
         $this->assertMatchesRegularExpression('/^wf_[0-9a-f]{32}$/', $message2->getId());
     }
 
+    public function test_from_array_rejects_missing_payload(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Missing required key "payload"');
+
+        WorkflowMessage::fromArray(['steps' => [], 'headers' => []]);
+    }
+
     public function test_preserves_id_across_transformations(): void
     {
         $message = new WorkflowMessage('payload', ['step1'], [], 'test-id');

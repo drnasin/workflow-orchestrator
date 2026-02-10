@@ -58,9 +58,9 @@ class WorkflowOrchestrator
     /**
      * @throws WorkflowException
      */
-    public function processAsyncStep(string $stepName): void
+    public function processAsyncStep(string $stepName, int $maxRetries = 3): void
     {
-        $this->engine->processAsyncStep($stepName);
+        $this->engine->processAsyncStep($stepName, $maxRetries);
     }
 
     public function withMiddleware(MiddlewareInterface $middleware): self
