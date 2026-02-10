@@ -17,6 +17,8 @@ use WorkflowOrchestrator\Registry\HandlerRegistry;
 
 readonly class WorkflowEngine
 {
+    private const RETRY_HEADER = '_retry_attempt';
+
     private QueueInterface $queue;
 
     public function __construct(
@@ -67,7 +69,9 @@ readonly class WorkflowEngine
      */
     private function invokeMethod(object $instance, string $methodName, mixed $payload, ?WorkflowMessage $message = null): mixed
     {
-        $reflection = new ReflectionMethod($instance, $methodName);
+        static $cache = [];
+        $cacheKey = $instance::class . '::' . $methodName;
+        $reflection = $cache[$cacheKey] ??= new ReflectionMethod($instance, $methodName);
         $args = [];
 
         foreach ($reflection->getParameters() as $param) {
@@ -182,15 +186,10 @@ readonly class WorkflowEngine
             $this->notifyStepCompleted($stepName, $resultMessage, $duration);
 
             return $resultMessage;
-        } catch (WorkflowException $e) {
-            // Re-throw WorkflowExceptions (including timeout) without wrapping
-            if ($e->getFailedStep() !== null) {
+        } catch (Throwable $e) {
+            if ($e instanceof WorkflowException && $e->getFailedStep() !== null) {
                 throw $e;
             }
-            $duration = (hrtime(true) - $startTime) / 1e9;
-            $this->notifyStepFailed($stepName, $message, $e, $duration);
-            throw new WorkflowException("Step '$stepName' failed: " . $e->getMessage(), 0, $e, $stepName);
-        } catch (Throwable $e) {
             $duration = (hrtime(true) - $startTime) / 1e9;
             $this->notifyStepFailed($stepName, $message, $e, $duration);
             throw new WorkflowException("Step '$stepName' failed: " . $e->getMessage(), 0, $e, $stepName);
@@ -208,7 +207,7 @@ readonly class WorkflowEngine
             return;
         }
 
-        $attempt = (int) $message->getHeader('_retry_attempt', 0);
+        $attempt = (int) $message->getHeader(self::RETRY_HEADER, 0);
 
         try {
             $message = $this->executeStep($stepName, $message);
@@ -220,7 +219,7 @@ readonly class WorkflowEngine
         } catch (Throwable $e) {
             if ($attempt < $maxRetries) {
                 // Re-queue with incremented retry count
-                $retryMessage = $message->withHeader('_retry_attempt', $attempt + 1);
+                $retryMessage = $message->withHeader(self::RETRY_HEADER, $attempt + 1);
                 $this->queue->push($stepName, $retryMessage);
                 return;
             }

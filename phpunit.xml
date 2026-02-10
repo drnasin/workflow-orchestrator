@@ -8,6 +8,7 @@
     <testsuites>
         <testsuite name="Unit">
             <directory>tests</directory>
+            <exclude>tests/Queue/AbstractQueueTest.php</exclude>
         </testsuite>
     </testsuites>
     <source>

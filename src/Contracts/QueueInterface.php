@@ -9,4 +9,8 @@ interface QueueInterface
     public function push(string $queue, WorkflowMessage $message): void;
 
     public function pop(string $queue): ?WorkflowMessage;
+
+    public function size(string $queue): int;
+
+    public function clear(string $queue): void;
 }
