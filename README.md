@@ -578,6 +578,15 @@ public function sendEmail(Order $order): Order { ... }
 
 ## Changelog
 
+### v1.3.0
+
+**Improvements:**
+- Completed `QueueInterface` with `size()` and `clear()` methods — now part of the contract, not just implementation details
+- Extracted `_retry_attempt` magic string to a private constant in `WorkflowEngine`
+- Consolidated duplicate exception handling in `executeStep()` into a single catch block
+- Cached `ReflectionMethod` objects in `invokeMethod()` to avoid redundant reflection on repeated step invocations
+- Extracted shared queue test base class (`AbstractQueueTest`) — eliminates ~80 lines of duplicated test code across `DatabaseQueueTest` and `RedisQueueTest`
+
 ### v1.2.0
 
 **New Features:**
