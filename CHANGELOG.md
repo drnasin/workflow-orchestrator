@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.5.0]
+
+### Changed
+- Restructured README to flow from simple to advanced usage: features, value proposition, error handling, and testing now appear before advanced topics
+- Grouped all advanced topics (dynamic workflows, headers, async, timeouts, middleware, event listeners) under a single "Advanced Usage" section
+- Extracted version history from README into dedicated CHANGELOG.md using Keep a Changelog format
+
 ## [v1.4.0]
 
 ### Fixed
