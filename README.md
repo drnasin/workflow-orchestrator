@@ -578,6 +578,18 @@ public function sendEmail(Order $order): Order { ... }
 
 ## Changelog
 
+### v1.4.0
+
+**Fixes:**
+- `WorkflowOrchestrator::processAsyncStep()` now exposes the `maxRetries` parameter (was only available via the engine directly)
+- Removed unused `Orchestrator::async` property — it was accepted but never read
+- `WorkflowMessage::fromArray()` now validates that the `payload` key exists, throwing `InvalidArgumentException` for malformed data
+- `SqliteQueue::pop()` now catches `Throwable` instead of `Exception` for consistency with the rest of the codebase
+
+**Tests:**
+- Added middleware execution ordering test (verifies FIFO order across multiple `withMiddleware()` calls)
+- Added `SimpleContainer` tests for classes with required constructor parameters (100% method coverage)
+
 ### v1.3.0
 
 **Improvements:**
