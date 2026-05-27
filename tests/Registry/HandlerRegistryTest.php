@@ -40,9 +40,38 @@ class TestWorkflowClass
     }
 }
 
+class ConflictingWorkflowClass
+{
+    #[Handler(channel: 'test.handler')]
+    public function differentHandler($payload): mixed
+    {
+        return $payload;
+    }
+}
+
 class HandlerRegistryTest extends TestCase
 {
     private HandlerRegistry $registry;
+
+    public function test_throws_when_two_methods_claim_the_same_handler_channel(): void
+    {
+        $this->registry->registerClass(TestWorkflowClass::class);
+
+        $this->expectException(WorkflowException::class);
+        $this->expectExceptionMessage("Handler channel 'test.handler' is already registered");
+
+        $this->registry->registerClass(ConflictingWorkflowClass::class);
+    }
+
+    public function test_re_registering_the_same_class_is_idempotent(): void
+    {
+        $this->registry->registerClass(TestWorkflowClass::class);
+        $this->registry->registerClass(TestWorkflowClass::class);
+
+        $handler = $this->registry->getHandler('test.handler');
+        $this->assertSame(TestWorkflowClass::class, $handler['class']);
+        $this->assertSame('handle', $handler['method']);
+    }
 
     public function test_registers_orchestrator_from_class(): void
     {
