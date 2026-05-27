@@ -445,6 +445,7 @@ $orchestrator = WorkflowOrchestrator::create()
 - ✅ Automatic table creation
 - ✅ No external dependencies
 - ✅ Single-file database
+- ✅ Concurrency-safe `pop()` across multiple workers
 
 **Setup Requirements:**
 - PHP PDO extension (included by default)
@@ -454,6 +455,20 @@ $orchestrator = WorkflowOrchestrator::create()
 ```php
 $queue = new SqliteQueue($pdo, 'my_custom_queue_table');
 ```
+
+**Concurrent Workers:**
+
+`pop()` takes the write lock up front (`BEGIN IMMEDIATE`), so two workers can never claim the same message. To make competing workers *wait* for the lock instead of failing on contention, the queue sets a busy timeout (default 5000 ms), configurable via the third constructor argument:
+
+```php
+// Wait up to 2 seconds for the write lock before giving up
+$queue = new SqliteQueue($pdo, 'workflow_queue', busyTimeoutMs: 2000);
+
+// Fail fast on contention (no wait)
+$queue = new SqliteQueue($pdo, 'workflow_queue', busyTimeoutMs: 0);
+```
+
+> **Tip:** create the PDO connection with `PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION` (as shown above). The queue relies on lock failures surfacing as exceptions for its full concurrency guarantees.
 
 ### Redis Queue
 
