@@ -16,6 +16,7 @@ class HandlerRegistry
 
     /**
      * @throws ReflectionException
+     * @throws WorkflowException if a channel is already registered to a different method
      */
     public function registerClass(string|object $class): void
     {
@@ -34,10 +35,12 @@ class HandlerRegistry
 
         foreach ($attributes as $attribute) {
             $orchestrator = $attribute->newInstance();
-            $this->orchestrators[$orchestrator->channel] = [
+            $config = [
                 'class'  => $className,
                 'method' => $method->getName(),
             ];
+            $this->guardAgainstChannelConflict($this->orchestrators, $orchestrator->channel, $config, 'Orchestrator');
+            $this->orchestrators[$orchestrator->channel] = $config;
         }
     }
 
@@ -47,13 +50,37 @@ class HandlerRegistry
 
         foreach ($attributes as $attribute) {
             $handler = $attribute->newInstance();
-            $this->handlers[$handler->channel] = [
+            $config = [
                 'class'          => $className,
                 'method'         => $method->getName(),
                 'async'          => $handler->async,
                 'returnsHeaders' => $handler->returnsHeaders,
                 'timeout'        => $handler->timeout,
             ];
+            $this->guardAgainstChannelConflict($this->handlers, $handler->channel, $config, 'Handler');
+            $this->handlers[$handler->channel] = $config;
+        }
+    }
+
+    /**
+     * Rejects two different methods claiming the same channel. Re-registering the
+     * exact same class+method is idempotent and allowed; a conflicting registration
+     * is a configuration error that would otherwise be silently overwritten.
+     *
+     * @throws WorkflowException
+     */
+    private function guardAgainstChannelConflict(array $existing, string $channel, array $config, string $kind): void
+    {
+        if (!isset($existing[$channel])) {
+            return;
+        }
+
+        $current = $existing[$channel];
+        if ($current['class'] !== $config['class'] || $current['method'] !== $config['method']) {
+            throw new WorkflowException(
+                "$kind channel '$channel' is already registered to {$current['class']}::{$current['method']}; "
+                . "cannot re-register it to {$config['class']}::{$config['method']}"
+            );
         }
     }
 

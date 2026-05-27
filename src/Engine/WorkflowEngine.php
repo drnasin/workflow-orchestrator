@@ -180,16 +180,21 @@ readonly class WorkflowEngine
             $duration = (hrtime(true) - $startTime) / 1e9;
 
             if ($timeout > 0 && $duration > $timeout) {
-                $exception = new WorkflowException(
+                throw new WorkflowException(
                     "Step '$stepName' exceeded timeout of {$timeout}s (took " . round($duration, 2) . "s)",
                     0, null, $stepName
                 );
-                $this->notifyStepFailed($stepName, $message, $exception, $duration);
-                throw $exception;
             }
 
             if ($handlerConfig['returnsHeaders']) {
-                $resultMessage = $message->withHeaders(is_array($result) ? $result : []);
+                if (!is_array($result)) {
+                    throw new WorkflowException(
+                        "Step '$stepName' is declared with returnsHeaders but its handler returned "
+                        . get_debug_type($result) . " instead of an array",
+                        0, null, $stepName
+                    );
+                }
+                $resultMessage = $message->withHeaders($result);
             } else {
                 $resultMessage = $message->withPayload($result);
             }
@@ -198,11 +203,17 @@ readonly class WorkflowEngine
 
             return $resultMessage;
         } catch (Throwable $e) {
+            // Single failure-notification point: every step failure (handler error,
+            // timeout, or returnsHeaders misuse) is reported exactly once here.
+            $duration = (hrtime(true) - $startTime) / 1e9;
+            $this->notifyStepFailed($stepName, $message, $e, $duration);
+
+            // A WorkflowException already scoped to a step (our timeout/header errors,
+            // or one propagated from a nested workflow) is re-thrown as-is to avoid
+            // double-wrapping; everything else is wrapped with this step's name.
             if ($e instanceof WorkflowException && $e->getFailedStep() !== null) {
                 throw $e;
             }
-            $duration = (hrtime(true) - $startTime) / 1e9;
-            $this->notifyStepFailed($stepName, $message, $e, $duration);
             throw new WorkflowException("Step '$stepName' failed: " . $e->getMessage(), 0, $e, $stepName);
         }
     }

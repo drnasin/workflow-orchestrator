@@ -589,6 +589,78 @@ class WorkflowEngineTest extends TestCase
         $this->assertSame(0, $this->queue->size('async-step'));
     }
 
+    public function test_returns_headers_handler_throws_on_non_array(): void
+    {
+        $badHeaderWorkflow = new class {
+            #[Orchestrator(channel: 'bad-header-workflow')]
+            public function orchestrate(TestOrder $order): array
+            {
+                return ['bad-header-step'];
+            }
+
+            #[Handler(channel: 'bad-header-step', returnsHeaders: true)]
+            public function badHeaders(TestOrder $order): string
+            {
+                return 'not-an-array';
+            }
+        };
+        $this->container->set(get_class($badHeaderWorkflow), $badHeaderWorkflow);
+        $this->engine->register($badHeaderWorkflow);
+
+        $this->expectException(WorkflowException::class);
+        $this->expectExceptionMessage("returnsHeaders but its handler returned string");
+        $this->engine->execute('bad-header-workflow', new TestOrder('ORD-BADHDR'));
+    }
+
+    public function test_step_failure_is_reported_when_handler_throws_scoped_exception(): void
+    {
+        $events = new \stdClass();
+        $events->failed = [];
+
+        $listener = new class($events) implements EventListenerInterface {
+            public function __construct(private \stdClass $events) {}
+            public function onStepStarted(string $stepName, WorkflowMessage $message): void {}
+            public function onStepCompleted(string $stepName, WorkflowMessage $message, float $duration): void {}
+            public function onStepFailed(string $stepName, WorkflowMessage $message, \Throwable $error, float $duration): void
+            {
+                $this->events->failed[] = $stepName;
+            }
+        };
+
+        // Handler throws a WorkflowException already scoped to a step. Previously the
+        // early re-throw skipped onStepFailed; the failure must still be reported.
+        $workflow = new class {
+            #[Orchestrator(channel: 'scoped-fail-workflow')]
+            public function orchestrate(TestOrder $order): array
+            {
+                return ['scoped-fail-step'];
+            }
+
+            #[Handler(channel: 'scoped-fail-step')]
+            public function fail(TestOrder $order): TestOrder
+            {
+                throw new WorkflowException('inner failure', 0, null, 'scoped-fail-step');
+            }
+        };
+        $this->container->set(get_class($workflow), $workflow);
+
+        $engine = new WorkflowEngine($this->container, new HandlerRegistry(), $this->queue, eventListeners: [$listener]);
+        $engine->register($workflow);
+
+        try {
+            $engine->execute('scoped-fail-workflow', new TestOrder('ORD-SCOPED'));
+            $this->fail('Expected WorkflowException to be thrown');
+        } catch (WorkflowException $e) {
+            $this->assertSame('scoped-fail-step', $e->getFailedStep());
+        }
+
+        $this->assertSame(
+            ['scoped-fail-step'],
+            $events->failed,
+            'onStepFailed must fire even when the handler throws a step-scoped WorkflowException'
+        );
+    }
+
     protected function setUp(): void
     {
         $this->container = new SimpleContainer();
