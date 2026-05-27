@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [v1.6.0]
 
 ### Added
 - `SqliteQueue` constructor parameter `$busyTimeoutMs` (default `5000`): concurrent workers wait for the write lock instead of failing immediately with `SQLITE_BUSY`. Pass `0` to disable the wait (fail-fast).
