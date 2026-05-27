@@ -103,6 +103,29 @@ class FailingWorkflow
     }
 }
 
+class CountingPayload
+{
+    public int $seenInvocation = 0;
+}
+
+class StatefulCountingWorkflow
+{
+    private int $invocations = 0;
+
+    #[Orchestrator(channel: 'counting')]
+    public function orchestrate(CountingPayload $payload): array
+    {
+        return ['count-step'];
+    }
+
+    #[Handler(channel: 'count-step')]
+    public function count(CountingPayload $payload): CountingPayload
+    {
+        $payload->seenInvocation = ++$this->invocations;
+        return $payload;
+    }
+}
+
 class WorkflowEngineTest extends TestCase
 {
     private SimpleContainer $container;
@@ -506,6 +529,23 @@ class WorkflowEngineTest extends TestCase
 
         $this->assertCount(1, $events->failed);
         $this->assertSame('failing-step', $events->failed[0]['step']);
+    }
+
+    public function test_auto_resolved_handlers_do_not_leak_state_across_executions(): void
+    {
+        // Registered by class name only (not set() in the container), so the handler
+        // is auto-resolved — the common case. Each execution must get a fresh instance.
+        $this->engine->register(StatefulCountingWorkflow::class);
+
+        $first = $this->engine->execute('counting', new CountingPayload());
+        $second = $this->engine->execute('counting', new CountingPayload());
+
+        $this->assertSame(1, $first->seenInvocation);
+        $this->assertSame(
+            1,
+            $second->seenInvocation,
+            'A fresh handler instance must be used per execution; instance state must not accumulate'
+        );
     }
 
     protected function setUp(): void

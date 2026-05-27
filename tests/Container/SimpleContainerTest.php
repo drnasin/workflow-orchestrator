@@ -59,6 +59,29 @@ class SimpleContainerTest extends TestCase
         $this->assertSame('default', $service->value);
     }
 
+    public function test_auto_resolved_instances_are_transient(): void
+    {
+        $first = $this->container->get(TestService::class);
+        $second = $this->container->get(TestService::class);
+
+        $this->assertInstanceOf(TestService::class, $first);
+        $this->assertInstanceOf(TestService::class, $second);
+        $this->assertNotSame(
+            $first,
+            $second,
+            'Auto-resolved instances must be fresh per resolution so handlers do not leak state across workflows'
+        );
+    }
+
+    public function test_explicitly_set_object_is_shared_even_when_class_is_auto_resolvable(): void
+    {
+        $shared = new TestService('shared');
+        $this->container->set(TestService::class, $shared);
+
+        $this->assertSame($shared, $this->container->get(TestService::class));
+        $this->assertSame($this->container->get(TestService::class), $this->container->get(TestService::class));
+    }
+
     public function test_throws_exception_for_nonexistent_service(): void
     {
         $this->expectException(ContainerException::class);

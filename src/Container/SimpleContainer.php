@@ -37,10 +37,13 @@ class SimpleContainer implements ContainerInterface
             return $instance;
         }
 
-        // Try to auto-resolve
+        // Auto-resolved classes are returned fresh on every call and never cached.
+        // Workflow handlers and orchestrators are resolved by class name through
+        // this path, so caching them would make them de-facto singletons and leak
+        // per-execution state across workflows in a long-running worker. Services
+        // that should be shared must be registered explicitly via set().
         if (class_exists($id) && $this->canAutoResolve($id)) {
-            $this->instances[$id] = new $id();
-            return $this->instances[$id];
+            return new $id();
         }
 
         throw new ContainerException("Service not found: $id");
