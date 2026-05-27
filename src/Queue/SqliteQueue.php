@@ -69,6 +69,9 @@ class SqliteQueue implements QueueInterface
         // BEGIN IMMEDIATE takes the write lock up front so two concurrent workers
         // cannot both read the same row before either deletes it. A plain deferred
         // transaction only takes a shared read lock, allowing duplicate delivery.
+        // COMMIT/ROLLBACK are issued as raw SQL rather than via PDO::commit()/
+        // rollBack() because PHP < 8.4 does not track a transaction started with
+        // PDO::exec('BEGIN ...'), so PDO::commit() would throw "no active transaction".
         $this->pdo->exec('BEGIN IMMEDIATE');
 
         try {
@@ -83,7 +86,7 @@ class SqliteQueue implements QueueInterface
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
             if (!$row) {
-                $this->pdo->commit();
+                $this->pdo->exec('COMMIT');
                 return null;
             }
 
@@ -96,16 +99,20 @@ class SqliteQueue implements QueueInterface
             // (SILENT/WARNING) and does not make them fully concurrency-safe — full
             // safety requires ERRMODE_EXCEPTION so lock failures surface as throws.
             if ($deleteStmt->rowCount() !== 1) {
-                $this->pdo->rollBack();
+                $this->pdo->exec('ROLLBACK');
                 return null;
             }
 
-            $this->pdo->commit();
+            $this->pdo->exec('COMMIT');
 
             return WorkflowMessage::fromArray(json_decode($row['message_data'], true, 512, JSON_THROW_ON_ERROR));
         } catch (Throwable $e) {
-            if ($this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            // Roll back if a transaction is still open. Swallow a secondary error
+            // (e.g. "no active transaction" when the failure happened after COMMIT)
+            // so it cannot mask the original Throwable.
+            try {
+                $this->pdo->exec('ROLLBACK');
+            } catch (Throwable) {
             }
             throw $e;
         }
