@@ -8,6 +8,7 @@ use WorkflowOrchestrator\Attributes\Header;
 use WorkflowOrchestrator\Attributes\Orchestrator;
 use WorkflowOrchestrator\Container\SimpleContainer;
 use WorkflowOrchestrator\Contracts\EventListenerInterface;
+use WorkflowOrchestrator\Contracts\MiddlewareInterface;
 use WorkflowOrchestrator\Engine\WorkflowEngine;
 use WorkflowOrchestrator\Exceptions\WorkflowException;
 use WorkflowOrchestrator\Message\WorkflowMessage;
@@ -546,6 +547,46 @@ class WorkflowEngineTest extends TestCase
             $second->seenInvocation,
             'A fresh handler instance must be used per execution; instance state must not accumulate'
         );
+    }
+
+    public function test_middleware_is_applied_once_across_async_continuation(): void
+    {
+        $tracker = new \stdClass();
+        $tracker->applied = 0;
+
+        $middleware = new class($tracker) implements MiddlewareInterface {
+            public function __construct(private \stdClass $tracker) {}
+
+            public function handle(WorkflowMessage $message, callable $next): WorkflowMessage
+            {
+                $this->tracker->applied++;
+                return $next($message);
+            }
+        };
+
+        // Async step first, then a sync step, so the workflow continues after the
+        // async boundary. Both handlers ('async-step', 'confirmation') live on OrderWorkflow.
+        $asyncThenSync = new class {
+            #[Orchestrator(channel: 'async-then-sync')]
+            public function orchestrate(TestOrder $order): array
+            {
+                return ['async-step', 'confirmation'];
+            }
+        };
+        $this->container->set(get_class($asyncThenSync), $asyncThenSync);
+
+        $engine = new WorkflowEngine($this->container, new HandlerRegistry(), $this->queue, middleware: [$middleware]);
+        $engine->register(OrderWorkflow::class);
+        $engine->register($asyncThenSync);
+
+        // Entry point: middleware applied once, async step queued.
+        $this->assertNull($engine->execute('async-then-sync', new TestOrder('ORD-MW-ASYNC')));
+        $this->assertSame(1, $tracker->applied);
+
+        // Async continuation must NOT re-apply middleware.
+        $engine->processAsyncStep('async-step');
+        $this->assertSame(1, $tracker->applied, 'Middleware must be applied once, not re-applied on async continuation');
+        $this->assertSame(0, $this->queue->size('async-step'));
     }
 
     protected function setUp(): void
