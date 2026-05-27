@@ -120,8 +120,19 @@ readonly class WorkflowEngine
      */
     public function processWorkflow(WorkflowMessage $message): mixed
     {
-        $message = $this->applyMiddleware($message);
+        return $this->runSteps($this->applyMiddleware($message));
+    }
 
+    /**
+     * Runs the step loop. Middleware is intentionally NOT applied here: it is
+     * applied once at the workflow entry point (processWorkflow). Async
+     * continuations resume through this method so that the (pre-processing)
+     * middleware pipeline is not re-applied on every queued step.
+     *
+     * @throws WorkflowException
+     */
+    private function runSteps(WorkflowMessage $message): mixed
+    {
         while ($message->hasMoreSteps()) {
             $stepName = $message->getNextStep();
             $message = $message->withoutFirstStep();
@@ -212,9 +223,10 @@ readonly class WorkflowEngine
         try {
             $message = $this->executeStep($stepName, $message);
 
-            // Continue processing remaining steps if any
+            // Continue processing remaining steps if any. Resume via runSteps (not
+            // processWorkflow) so middleware is not re-applied on the continuation.
             if ($message->hasMoreSteps()) {
-                $this->processWorkflow($message);
+                $this->runSteps($message);
             }
         } catch (Throwable $e) {
             if ($attempt < $maxRetries) {
