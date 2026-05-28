@@ -50,18 +50,18 @@ readonly class WorkflowEngine
         $orchestratorConfig = $this->registry->getOrchestrator($channel);
         $instance = $this->container->get($orchestratorConfig['class']);
 
-        // Execute orchestrator to get workflow steps
-        $steps = $this->invokeMethod($instance, $orchestratorConfig['method'], $payload);
+        // Build the message before invoking the orchestrator so its method can
+        // read entry-point headers via the #[Header] attribute. The id generated
+        // here is preserved across withSteps().
+        $message = new WorkflowMessage($payload, [], $headers);
+
+        $steps = $this->invokeMethod($instance, $orchestratorConfig['method'], $payload, $message);
 
         if (!is_array($steps)) {
             throw new WorkflowException("Orchestrator must return an array of steps");
         }
 
-        // Create workflow message
-        $message = new WorkflowMessage($payload, $steps, $headers);
-
-        // Process workflow
-        return $this->processWorkflow($message);
+        return $this->processWorkflow($message->withSteps($steps));
     }
 
     /**

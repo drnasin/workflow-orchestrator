@@ -670,6 +670,32 @@ class WorkflowEngineTest extends TestCase
         $this->assertSame(1.0, $backoff(0), 'non-positive attempts collapse to the base');
     }
 
+    public function test_orchestrator_can_read_entry_point_headers(): void
+    {
+        $headerRouted = new class {
+            #[Orchestrator(channel: 'header-routed-workflow')]
+            public function orchestrate(TestOrder $order, #[Header('mode')] string $mode = 'standard'): array
+            {
+                $steps = ['validate'];
+                if ($mode === 'premium') {
+                    $steps[] = 'premium-discount';
+                }
+                $steps[] = 'confirmation';
+                return $steps;
+            }
+        };
+        $this->container->set(get_class($headerRouted), $headerRouted);
+        $this->engine->register($headerRouted);
+
+        // Premium header → discount applied.
+        $premium = $this->engine->execute('header-routed-workflow', new TestOrder('ORD-HDR-P', 100.0), ['mode' => 'premium']);
+        $this->assertSame(90.0, $premium->total);
+
+        // Header absent → default 'standard' branch, no discount.
+        $standard = $this->engine->execute('header-routed-workflow', new TestOrder('ORD-HDR-S', 100.0));
+        $this->assertSame(100.0, $standard->total);
+    }
+
     public function test_handler_with_two_untyped_payload_params_is_rejected(): void
     {
         $ambiguous = new class {
