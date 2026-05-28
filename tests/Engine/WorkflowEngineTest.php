@@ -670,6 +670,75 @@ class WorkflowEngineTest extends TestCase
         $this->assertSame(1.0, $backoff(0), 'non-positive attempts collapse to the base');
     }
 
+    public function test_handler_with_two_untyped_payload_params_is_rejected(): void
+    {
+        $ambiguous = new class {
+            #[Orchestrator(channel: 'ambig-untyped-workflow')]
+            public function orchestrate(TestOrder $order): array
+            {
+                return ['ambig-untyped-step'];
+            }
+
+            #[Handler(channel: 'ambig-untyped-step')]
+            public function handle($a, $b): mixed
+            {
+                return $a;
+            }
+        };
+        $this->container->set(get_class($ambiguous), $ambiguous);
+        $this->engine->register($ambiguous);
+
+        $this->expectException(WorkflowException::class);
+        $this->expectExceptionMessage("Cannot resolve parameter '\$b': the payload has already been bound");
+        $this->engine->execute('ambig-untyped-workflow', new TestOrder('ORD-AMBIG-U'));
+    }
+
+    public function test_handler_with_typed_payload_plus_builtin_param_is_rejected(): void
+    {
+        $ambiguous = new class {
+            #[Orchestrator(channel: 'ambig-mixed-workflow')]
+            public function orchestrate(TestOrder $order): array
+            {
+                return ['ambig-mixed-step'];
+            }
+
+            #[Handler(channel: 'ambig-mixed-step')]
+            public function handle(TestOrder $order, int $count): TestOrder
+            {
+                return $order;
+            }
+        };
+        $this->container->set(get_class($ambiguous), $ambiguous);
+        $this->engine->register($ambiguous);
+
+        $this->expectException(WorkflowException::class);
+        $this->expectExceptionMessage("Cannot resolve parameter '\$count': the payload has already been bound");
+        $this->engine->execute('ambig-mixed-workflow', new TestOrder('ORD-AMBIG-M'));
+    }
+
+    public function test_handler_with_payload_plus_header_param_is_allowed(): void
+    {
+        $headerOnly = new class {
+            #[Orchestrator(channel: 'header-only-workflow')]
+            public function orchestrate(TestOrder $order): array
+            {
+                return ['header-only-step'];
+            }
+
+            #[Handler(channel: 'header-only-step')]
+            public function handle(TestOrder $order, #[Header('tier')] string $tier = 'standard'): TestOrder
+            {
+                return $order;
+            }
+        };
+        $this->container->set(get_class($headerOnly), $headerOnly);
+        $this->engine->register($headerOnly);
+
+        // Header parameters do NOT consume the payload, so this combination is fine.
+        $result = $this->engine->execute('header-only-workflow', new TestOrder('ORD-HDR-OK'));
+        $this->assertInstanceOf(TestOrder::class, $result);
+    }
+
     public function test_returns_headers_handler_throws_on_non_array(): void
     {
         $badHeaderWorkflow = new class {
