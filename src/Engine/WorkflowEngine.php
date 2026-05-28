@@ -73,17 +73,28 @@ readonly class WorkflowEngine
         $cacheKey = $instance::class . '::' . $methodName;
         $reflection = $cache[$cacheKey] ??= new ReflectionMethod($instance, $methodName);
         $args = [];
+        $payloadBound = false;
 
         foreach ($reflection->getParameters() as $param) {
-            $args[] = $this->resolveParameter($param, $payload, $message);
+            $args[] = $this->resolveParameter($param, $payload, $message, $payloadBound);
         }
 
         return $reflection->invoke($instance, ...$args);
     }
 
-    private function resolveParameter(ReflectionParameter $param, mixed $payload, ?WorkflowMessage $message): mixed
-    {
-        // Check for Header attribute
+    /**
+     * @param bool $payloadBound Tracks whether a previous parameter in the same method
+     *                           has already received the payload. Each invocation has
+     *                           exactly one payload, so a second parameter that would
+     *                           also consume it is an ambiguous handler signature.
+     */
+    private function resolveParameter(
+        ReflectionParameter $param,
+        mixed $payload,
+        ?WorkflowMessage $message,
+        bool &$payloadBound,
+    ): mixed {
+        // Check for Header attribute (does not consume the payload)
         $headerAttributes = $param->getAttributes(Header::class);
         if (!empty($headerAttributes) && $message) {
             $headerName = $headerAttributes[0]->newInstance()->name;
@@ -96,8 +107,15 @@ readonly class WorkflowEngine
         if ($type instanceof ReflectionNamedType && !$type->isBuiltin()) {
             $typeName = $type->getName();
 
-            // Check if payload matches the type
+            // Payload matches the type — this parameter receives the payload.
             if ($payload instanceof $typeName) {
+                if ($payloadBound) {
+                    throw new WorkflowException(
+                        "Cannot resolve parameter '\${$param->getName()}' of type '{$typeName}': "
+                        . "the payload has already been bound to an earlier parameter"
+                    );
+                }
+                $payloadBound = true;
                 return $payload;
             }
 
@@ -111,7 +129,16 @@ readonly class WorkflowEngine
             );
         }
 
-        // Return payload as fallback for builtin/untyped parameters
+        // Builtin or untyped parameter — falls back to the payload. Only one such
+        // parameter may consume it; a second would silently receive a duplicate
+        // (and almost certainly wrong) value, so reject the handler as ambiguous.
+        if ($payloadBound) {
+            throw new WorkflowException(
+                "Cannot resolve parameter '\${$param->getName()}': the payload has already been "
+                . "bound to an earlier parameter. A handler must declare at most one payload parameter"
+            );
+        }
+        $payloadBound = true;
         return $payload;
     }
 
