@@ -2,7 +2,28 @@
 namespace WorkflowOrchestrator\Tests\Message;
 
 use PHPUnit\Framework\TestCase;
+use WorkflowOrchestrator\Contracts\SerializablePayload;
 use WorkflowOrchestrator\Message\WorkflowMessage;
+
+class TestOrderPayload implements SerializablePayload
+{
+    public function __construct(public readonly string $id, public readonly float $total) {}
+
+    public function toArray(): array
+    {
+        return ['id' => $this->id, 'total' => $this->total];
+    }
+
+    public static function fromArray(array $data): static
+    {
+        return new self($data['id'], $data['total']);
+    }
+}
+
+class NotSerializableClass
+{
+    public function __construct(public readonly string $value = 'x') {}
+}
 
 class WorkflowMessageTest extends TestCase
 {
@@ -120,6 +141,74 @@ class WorkflowMessageTest extends TestCase
         $this->expectExceptionMessage('Missing required key "payload"');
 
         WorkflowMessage::fromArray(['steps' => [], 'headers' => []]);
+    }
+
+    public function test_serializable_payload_survives_json_round_trip(): void
+    {
+        $original = new TestOrderPayload('ORD-7', 42.5);
+        $message = new WorkflowMessage($original, ['s1'], ['h' => 'v']);
+
+        // Simulate the full queue trip: toArray → JSON encode → JSON decode → fromArray.
+        $rehydrated = WorkflowMessage::fromArray(
+            json_decode(json_encode($message->toArray(), JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR)
+        );
+
+        $payload = $rehydrated->getPayload();
+        $this->assertInstanceOf(TestOrderPayload::class, $payload);
+        $this->assertSame('ORD-7', $payload->id);
+        $this->assertSame(42.5, $payload->total);
+        $this->assertSame(['s1'], $rehydrated->getSteps());
+        $this->assertSame(['h' => 'v'], $rehydrated->getAllHeaders());
+    }
+
+    public function test_plain_array_payload_is_not_treated_as_envelope(): void
+    {
+        $payload = ['id' => 'X', 'total' => 99.5];
+        $message = new WorkflowMessage($payload);
+
+        $rehydrated = WorkflowMessage::fromArray(
+            json_decode(json_encode($message->toArray(), JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR)
+        );
+
+        $this->assertSame($payload, $rehydrated->getPayload());
+    }
+
+    public function test_scalar_and_null_payloads_round_trip_unchanged(): void
+    {
+        foreach ([42, 'hello', 0.5, true, false, null] as $payload) {
+            $message = new WorkflowMessage($payload);
+            $rehydrated = WorkflowMessage::fromArray(
+                json_decode(json_encode($message->toArray(), JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR)
+            );
+            $this->assertSame($payload, $rehydrated->getPayload());
+        }
+    }
+
+    public function test_envelope_with_non_serializable_class_is_not_rehydrated(): void
+    {
+        // An attacker-crafted envelope naming a class that does NOT implement
+        // SerializablePayload must NOT trigger construction of that class.
+        $envelope = [
+            '__wfo_payload_type__' => NotSerializableClass::class,
+            '__wfo_payload_data__' => ['value' => 'pwned'],
+        ];
+
+        $message = WorkflowMessage::fromArray(['payload' => $envelope]);
+
+        $this->assertIsArray($message->getPayload());
+        $this->assertSame($envelope, $message->getPayload());
+    }
+
+    public function test_envelope_with_unknown_class_is_not_rehydrated(): void
+    {
+        $envelope = [
+            '__wfo_payload_type__' => 'WorkflowOrchestrator\\Definitely\\Does\\Not\\Exist',
+            '__wfo_payload_data__' => ['anything' => 'goes'],
+        ];
+
+        $message = WorkflowMessage::fromArray(['payload' => $envelope]);
+
+        $this->assertSame($envelope, $message->getPayload());
     }
 
     public function test_preserves_id_across_transformations(): void
