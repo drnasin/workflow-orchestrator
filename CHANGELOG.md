@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.7.0]
+
+### Added
+- `SerializablePayload` contract (`toArray()` + `static fromArray()`). Payloads implementing it survive JSON-serialized queues (`SqliteQueue`, `RedisQueue`) with their concrete type intact: `WorkflowMessage::toArray()` tags such payloads with their class name and `fromArray()` rehydrates them — but only if the stored class still implements the interface, which acts as the safe whitelist (no arbitrary class instantiation from queue data). Scalars, plain arrays, and unknown classes pass through untouched, so existing payloads are unaffected.
+- `processAsyncStep()` gains two optional parameters:
+  - `$backoff: callable|null` — `function(int $retryAttempt): int|float` returning seconds to wait before re-queuing a failed attempt (inline `usleep`). `$retryAttempt` is 1-indexed.
+  - `$dlqQueue: ?string` — when set, a message that has exhausted all retries is pushed to this dead-letter queue and no exception is thrown.
+- `WorkflowEngine::exponentialBackoff(float $base = 1.0, float $cap = 60.0): callable` helper for the new `$backoff` parameter.
+
+### Fixed
+- Orchestrator methods can now read entry-point headers via `#[Header]`. `execute()` previously invoked the orchestrator with a null message, so `#[Header]` parameters silently fell through to the payload fallback — header-driven routing in the orchestrator did not work.
+- A handler signature that would bind the payload to more than one parameter (e.g. `handle($a, $b)` or `handle(Payload $p, int $n)`) is now rejected with a clear `WorkflowException`. Previously every such parameter silently received the same payload value. `#[Header]`-annotated parameters and container-resolved typed parameters are not payload consumers, so the common `(Payload $p, #[Header] string $h, OtherService $svc)` shape is unaffected.
+
+### Changed
+- `WorkflowOrchestrator\Contracts\ContainerInterface` now extends `Psr\Container\ContainerInterface`. The library already required `psr/container ^2.0` and claimed PSR-11 compatibility; the contract is now actually one. `ContainerException` implements PSR-11's `NotFoundExceptionInterface` so PSR-11 consumers can catch the standard contract.
+- `WorkflowMessage::$id` is now `readonly`, matching the rest of the class's immutability claim.
+
 ## [v1.6.0]
 
 ### Added
