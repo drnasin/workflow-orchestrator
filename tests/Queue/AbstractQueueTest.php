@@ -4,7 +4,23 @@ namespace WorkflowOrchestrator\Tests\Queue;
 
 use PHPUnit\Framework\TestCase;
 use WorkflowOrchestrator\Contracts\QueueInterface;
+use WorkflowOrchestrator\Contracts\SerializablePayload;
 use WorkflowOrchestrator\Message\WorkflowMessage;
+
+class QueuedOrderPayload implements SerializablePayload
+{
+    public function __construct(public readonly string $id, public readonly int $items) {}
+
+    public function toArray(): array
+    {
+        return ['id' => $this->id, 'items' => $this->items];
+    }
+
+    public static function fromArray(array $data): static
+    {
+        return new self($data['id'], $data['items']);
+    }
+}
 
 abstract class AbstractQueueTest extends TestCase
 {
@@ -93,6 +109,20 @@ abstract class AbstractQueueTest extends TestCase
         $message2 = $this->queue->pop('queue2');
         $this->assertSame('payload2', $message2->getPayload());
         $this->assertSame(0, $this->queue->size('queue2'));
+    }
+
+    public function test_serializable_payload_keeps_its_type_across_push_and_pop(): void
+    {
+        $original = new QueuedOrderPayload('ORD-async', 3);
+        $this->queue->push('typed-queue', new WorkflowMessage($original, ['ship']));
+
+        $retrieved = $this->queue->pop('typed-queue');
+
+        $this->assertNotNull($retrieved);
+        $payload = $retrieved->getPayload();
+        $this->assertInstanceOf(QueuedOrderPayload::class, $payload);
+        $this->assertSame('ORD-async', $payload->id);
+        $this->assertSame(3, $payload->items);
     }
 
     public function test_handles_complex_payloads(): void

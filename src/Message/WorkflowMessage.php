@@ -1,8 +1,14 @@
 <?php
 namespace WorkflowOrchestrator\Message;
 
+use WorkflowOrchestrator\Contracts\SerializablePayload;
+
 class WorkflowMessage
 {
+    /** Marker keys used to tag a SerializablePayload across JSON round-trips. */
+    private const SERIALIZED_TYPE_KEY = '__wfo_payload_type__';
+    private const SERIALIZED_DATA_KEY = '__wfo_payload_data__';
+
     public function __construct(
         private readonly mixed $payload,
         private readonly array $steps = [],
@@ -78,7 +84,7 @@ class WorkflowMessage
     {
         return [
             'id' => $this->id,
-            'payload' => $this->payload,
+            'payload' => $this->encodePayload($this->payload),
             'steps' => $this->steps,
             'headers' => $this->headers,
         ];
@@ -91,10 +97,53 @@ class WorkflowMessage
         }
 
         return new self(
-            $data['payload'],
+            self::decodePayload($data['payload']),
             $data['steps'] ?? [],
             $data['headers'] ?? [],
             $data['id'] ?? ''
         );
+    }
+
+    /**
+     * Wraps a SerializablePayload in a tagged envelope so its concrete type can be
+     * restored on the other side of a JSON round-trip. Other payload shapes
+     * (scalars, plain arrays, null) pass through untouched.
+     */
+    private function encodePayload(mixed $payload): mixed
+    {
+        if ($payload instanceof SerializablePayload) {
+            return [
+                self::SERIALIZED_TYPE_KEY => $payload::class,
+                self::SERIALIZED_DATA_KEY => $payload->toArray(),
+            ];
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Rehydrates a payload only if it carries the envelope produced by
+     * {@see encodePayload()} AND the named class still implements
+     * SerializablePayload. The interface check is the whitelist: a malicious queue
+     * cannot trigger construction of arbitrary classes — only those the
+     * application explicitly opted in by implementing this interface.
+     */
+    private static function decodePayload(mixed $payload): mixed
+    {
+        if (!is_array($payload)
+            || !isset($payload[self::SERIALIZED_TYPE_KEY], $payload[self::SERIALIZED_DATA_KEY])
+            || !is_string($payload[self::SERIALIZED_TYPE_KEY])
+            || !is_array($payload[self::SERIALIZED_DATA_KEY])
+        ) {
+            return $payload;
+        }
+
+        $type = $payload[self::SERIALIZED_TYPE_KEY];
+
+        if (!class_exists($type) || !is_a($type, SerializablePayload::class, true)) {
+            return $payload;
+        }
+
+        return $type::fromArray($payload[self::SERIALIZED_DATA_KEY]);
     }
 }
