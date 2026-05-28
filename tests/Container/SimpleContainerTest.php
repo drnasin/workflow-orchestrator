@@ -3,6 +3,9 @@
 namespace WorkflowOrchestrator\Tests\Container;
 
 use PHPUnit\Framework\TestCase;
+use Psr\Container\ContainerExceptionInterface;
+use Psr\Container\ContainerInterface as PsrContainerInterface;
+use Psr\Container\NotFoundExceptionInterface;
 use WorkflowOrchestrator\Container\SimpleContainer;
 use WorkflowOrchestrator\Exceptions\ContainerException;
 
@@ -80,6 +83,22 @@ class SimpleContainerTest extends TestCase
 
         $this->assertSame($shared, $this->container->get(TestService::class));
         $this->assertSame($this->container->get(TestService::class), $this->container->get(TestService::class));
+    }
+
+    public function test_simple_container_satisfies_psr11(): void
+    {
+        $this->assertInstanceOf(PsrContainerInterface::class, $this->container);
+    }
+
+    public function test_not_found_exception_implements_psr11_contracts(): void
+    {
+        try {
+            $this->container->get('NonExistentClass');
+            $this->fail('Expected ContainerException');
+        } catch (ContainerException $e) {
+            $this->assertInstanceOf(NotFoundExceptionInterface::class, $e);
+            $this->assertInstanceOf(ContainerExceptionInterface::class, $e);
+        }
     }
 
     public function test_throws_exception_for_nonexistent_service(): void

@@ -9,11 +9,13 @@ class WorkflowMessage
     private const SERIALIZED_TYPE_KEY = '__wfo_payload_type__';
     private const SERIALIZED_DATA_KEY = '__wfo_payload_data__';
 
+    private readonly string $id;
+
     public function __construct(
         private readonly mixed $payload,
         private readonly array $steps = [],
         private readonly array $headers = [],
-        private string $id = ''
+        string $id = '',
     ) {
         $this->id = $id !== '' ? $id : 'wf_' . bin2hex(random_bytes(16));
     }
