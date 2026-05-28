@@ -589,6 +589,87 @@ class WorkflowEngineTest extends TestCase
         $this->assertSame(0, $this->queue->size('async-step'));
     }
 
+    public function test_backoff_callable_is_invoked_before_each_re_queue(): void
+    {
+        $attempts = [];
+        $backoff = function (int $retryAttempt) use (&$attempts): float {
+            $attempts[] = $retryAttempt;
+            return 0.0; // no actual sleep in tests
+        };
+
+        $failingAsync = new class {
+            #[Orchestrator(channel: 'backoff-workflow')]
+            public function orchestrate(TestOrder $order): array
+            {
+                return ['backoff-step'];
+            }
+
+            #[Handler(channel: 'backoff-step', async: true)]
+            public function fail(TestOrder $order): TestOrder
+            {
+                throw new \RuntimeException('transient');
+            }
+        };
+        $this->container->set(get_class($failingAsync), $failingAsync);
+        $this->engine->register($failingAsync);
+
+        $this->engine->execute('backoff-workflow', new TestOrder('ORD-BO'));
+
+        // maxRetries=2 → backoff called for retry 1 and retry 2 (then DLQ branch handles the 3rd).
+        $this->engine->processAsyncStep('backoff-step', maxRetries: 2, backoff: $backoff, dlqQueue: 'dlq:backoff-step');
+        $this->engine->processAsyncStep('backoff-step', maxRetries: 2, backoff: $backoff, dlqQueue: 'dlq:backoff-step');
+        $this->engine->processAsyncStep('backoff-step', maxRetries: 2, backoff: $backoff, dlqQueue: 'dlq:backoff-step');
+
+        $this->assertSame([1, 2], $attempts, 'Backoff must be invoked with the 1-indexed retry attempt number before each re-queue');
+    }
+
+    public function test_dead_letter_queue_receives_messages_after_retries_exhausted(): void
+    {
+        $failingAsync = new class {
+            #[Orchestrator(channel: 'dlq-workflow')]
+            public function orchestrate(TestOrder $order): array
+            {
+                return ['dlq-step'];
+            }
+
+            #[Handler(channel: 'dlq-step', async: true)]
+            public function fail(TestOrder $order): TestOrder
+            {
+                throw new \RuntimeException('permanent');
+            }
+        };
+        $this->container->set(get_class($failingAsync), $failingAsync);
+        $this->engine->register($failingAsync);
+
+        $this->engine->execute('dlq-workflow', new TestOrder('ORD-DLQ'));
+
+        // With maxRetries=2 the message is re-queued twice (attempts 1, 2) then,
+        // on the third failed attempt, parked in the DLQ instead of throwing.
+        $this->engine->processAsyncStep('dlq-step', maxRetries: 2, dlqQueue: 'dlq:dlq-step');
+        $this->engine->processAsyncStep('dlq-step', maxRetries: 2, dlqQueue: 'dlq:dlq-step');
+        $this->engine->processAsyncStep('dlq-step', maxRetries: 2, dlqQueue: 'dlq:dlq-step');
+
+        $this->assertSame(0, $this->queue->size('dlq-step'), 'Original queue must be drained');
+        $this->assertSame(1, $this->queue->size('dlq:dlq-step'), 'DLQ must hold the dead message');
+
+        $dead = $this->queue->pop('dlq:dlq-step');
+        $this->assertInstanceOf(WorkflowMessage::class, $dead);
+        $this->assertSame('ORD-DLQ', $dead->getPayload()->id);
+        $this->assertSame(2, (int) $dead->getHeader('_retry_attempt', 0));
+    }
+
+    public function test_exponential_backoff_helper_produces_expected_delays(): void
+    {
+        $backoff = WorkflowEngine::exponentialBackoff(base: 1.0, cap: 60.0);
+
+        $this->assertSame(1.0, $backoff(1));
+        $this->assertSame(2.0, $backoff(2));
+        $this->assertSame(4.0, $backoff(3));
+        $this->assertSame(8.0, $backoff(4));
+        $this->assertSame(60.0, $backoff(100), 'must be capped');
+        $this->assertSame(1.0, $backoff(0), 'non-positive attempts collapse to the base');
+    }
+
     public function test_returns_headers_handler_throws_on_non_array(): void
     {
         $badHeaderWorkflow = new class {

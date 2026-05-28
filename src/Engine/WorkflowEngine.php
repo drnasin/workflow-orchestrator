@@ -219,10 +219,28 @@ readonly class WorkflowEngine
     }
 
     /**
+     * Process a single queued async step.
+     *
+     * @param string        $stepName    The step (queue) to process.
+     * @param int           $maxRetries  How many retries are allowed after the first failure.
+     * @param callable|null $backoff     Optional `function(int $retryAttempt): int|float` returning the
+     *                                   number of seconds to wait before re-queuing a failed attempt.
+     *                                   `$retryAttempt` is 1-indexed (1 = first retry). Default `null`
+     *                                   means re-queue immediately (no delay). See {@see exponentialBackoff()}.
+     *                                   The wait is performed inline (`usleep`) inside this method.
+     * @param string|null   $dlqQueue    Optional dead-letter queue name. When set, a message that has
+     *                                   exhausted all retries is pushed to this queue and NO exception
+     *                                   is thrown. When `null` (default) the legacy behavior is preserved:
+     *                                   a `WorkflowException` is thrown after the last failed attempt.
+     *
      * @throws WorkflowException
      */
-    public function processAsyncStep(string $stepName, int $maxRetries = 3): void
-    {
+    public function processAsyncStep(
+        string $stepName,
+        int $maxRetries = 3,
+        ?callable $backoff = null,
+        ?string $dlqQueue = null,
+    ): void {
         $message = $this->queue->pop($stepName);
 
         if (!$message) {
@@ -241,9 +259,25 @@ readonly class WorkflowEngine
             }
         } catch (Throwable $e) {
             if ($attempt < $maxRetries) {
-                // Re-queue with incremented retry count
-                $retryMessage = $message->withHeader(self::RETRY_HEADER, $attempt + 1);
+                $nextAttempt = $attempt + 1;
+
+                if ($backoff !== null) {
+                    $delaySeconds = (float) $backoff($nextAttempt);
+                    if ($delaySeconds > 0) {
+                        usleep((int) round($delaySeconds * 1_000_000));
+                    }
+                }
+
+                $retryMessage = $message->withHeader(self::RETRY_HEADER, $nextAttempt);
                 $this->queue->push($stepName, $retryMessage);
+                return;
+            }
+
+            // Retries exhausted. If a dead-letter queue is configured, park the
+            // message there and treat the failure as recovered. Otherwise preserve
+            // the legacy behavior and surface the failure as an exception.
+            if ($dlqQueue !== null) {
+                $this->queue->push($dlqQueue, $message);
                 return;
             }
 
@@ -273,5 +307,18 @@ readonly class WorkflowEngine
         foreach ($this->eventListeners as $listener) {
             $listener->onStepFailed($stepName, $message, $error, $duration);
         }
+    }
+
+    /**
+     * Built-in exponential backoff for {@see processAsyncStep()}'s `$backoff` parameter.
+     *
+     * Delay grows as `$base * 2^($retryAttempt - 1)` seconds and is capped at `$cap`.
+     * For `$base = 1`, `$cap = 60` the delays are 1s, 2s, 4s, 8s, 16s, 32s, 60s, 60s …
+     *
+     * @return callable(int): float
+     */
+    public static function exponentialBackoff(float $base = 1.0, float $cap = 60.0): callable
+    {
+        return static fn (int $retryAttempt): float => min($cap, $base * (2 ** max(0, $retryAttempt - 1)));
     }
 }
