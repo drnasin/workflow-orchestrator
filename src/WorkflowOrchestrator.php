@@ -56,11 +56,21 @@ class WorkflowOrchestrator
     }
 
     /**
+     * @param callable|null $backoff   Optional `function(int $retryAttempt): int|float` returning the
+     *                                 seconds to wait before re-queuing a failed attempt. Default `null`
+     *                                 means no wait. See {@see WorkflowEngine::exponentialBackoff()}.
+     * @param string|null   $dlqQueue  Optional dead-letter queue name. When set, a message that has
+     *                                 exhausted all retries is pushed there and no exception is thrown.
+     *
      * @throws WorkflowException
      */
-    public function processAsyncStep(string $stepName, int $maxRetries = 3): void
-    {
-        $this->engine->processAsyncStep($stepName, $maxRetries);
+    public function processAsyncStep(
+        string $stepName,
+        int $maxRetries = 3,
+        ?callable $backoff = null,
+        ?string $dlqQueue = null,
+    ): void {
+        $this->engine->processAsyncStep($stepName, $maxRetries, $backoff, $dlqQueue);
     }
 
     public function withMiddleware(MiddlewareInterface $middleware): self
